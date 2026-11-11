@@ -1,0 +1,46 @@
+{
+  "page": {
+    "title": "Golf True 3D",
+    "description": "",
+    "eyebrow": "Computer vision \u00b7 Golf swing analysis",
+    "navigationLabel": "Project sections",
+    "navigationToggle": "Toggle section navigation",
+    "mainPage": {
+      "label": "Return to main page",
+      "url": ""
+    },
+    "footer": "Golf True 3D"
+  },
+  "sections": [
+    {
+      "id": "abstract",
+      "title": "Abstract",
+      "paragraphs": []
+    },
+    {
+      "id": "introduction",
+      "title": "Introduction",
+      "paragraphs": []
+    },
+    {
+      "id": "method",
+      "title": "Method",
+      "paragraphs": []
+    },
+    {
+      "id": "results",
+      "title": "Results",
+      "paragraphs": []
+    },
+    {
+      "id": "discussion",
+      "title": "Discussion",
+      "paragraphs": []
+    },
+    {
+      "id": "conclusion",
+      "title": "Conclusion",
+      "paragraphs": []
+    }
+  ]
+}

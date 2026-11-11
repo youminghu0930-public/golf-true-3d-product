@@ -2,14 +2,15 @@
   "page": {
     "title": "Golf True 3D",
     "description": "",
-    "eyebrow": "Computer vision \u00b7 Golf swing analysis",
+    "eyebrow": "Computer vision · Golf swing analysis",
     "navigationLabel": "Project sections",
     "navigationToggle": "Toggle section navigation",
     "mainPage": {
       "label": "Return to main page",
       "url": ""
     },
-    "footer": "Golf True 3D"
+    "footer": "Golf True 3D",
+    "projectLinkLabel": "View project →"
   },
   "sections": [
     {
@@ -24,8 +25,48 @@
     },
     {
       "id": "method",
-      "title": "Method",
-      "paragraphs": []
+      "title": "Methods",
+      "paragraphs": [
+        "Three connected projects turn paired golf videos into interpretable 3D movement: reconstruct the swing, align the recordings in time, and extract measurements with explicit definitions. Each project below explains one part of that workflow."
+      ],
+      "projects": [
+        {
+          "id": "golf-swing-3d-reconstruction",
+          "title": "Golf Swing 3D Reconstruction",
+          "summary": "Two camera views become one inspectable 3D swing. A hybrid pipeline estimates camera geometry and reconstructs body and club movement without a separate calibration session.",
+          "url": "https://youminghu0930-public.github.io/golf-swing-3d-reconstruction/",
+          "banner": {
+            "enabled": true,
+            "swing": "00",
+            "label": "Face-on golf swing 3D reconstruction preview",
+            "fps": 60
+          }
+        },
+        {
+          "id": "two-event-time-sync",
+          "title": "Two-Event Time Synchronization",
+          "summary": "Independent recordings must describe the same moment. Two shared swing events align their starting offsets and relative timing, improving the consistency of multi-view reconstruction.",
+          "url": "https://youminghu0930-public.github.io/two-event-time-sync/",
+          "banner": {
+            "enabled": true,
+            "swing": "05",
+            "label": "Face-on synchronized golf swing reconstruction preview",
+            "fps": 30
+          }
+        },
+        {
+          "id": "pose-information-extraction",
+          "title": "Pose Information Extraction",
+          "summary": "Reconstructed motion becomes interpretable measurements. Explicit reference systems and geometric definitions connect body rotation and translation metrics to visual explanations.",
+          "url": "https://youminghu0930-public.github.io/pose-information-extraction/",
+          "banner": {
+            "enabled": true,
+            "swing": "00",
+            "label": "Face-on golf swing 3D reconstruction preview",
+            "fps": 60
+          }
+        }
+      ]
     },
     {
       "id": "results",

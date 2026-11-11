@@ -7,7 +7,7 @@ function element(tag, text, className) {
 }
 
 async function renderPage() {
-  const response = await fetch('materials/content.json');
+  const response = await fetch('materials/content.json', {cache:'no-cache'});
   if (!response.ok) throw new Error(`Content request failed: ${response.status}`);
   const { page, sections } = await response.json();
   document.title = page.title;
@@ -92,6 +92,36 @@ async function renderPage() {
       }
       body.append(group);
     }
+    if (content.projects) {
+      const cards = element('div', undefined, 'project-cards');
+      cards.id = 'projects';
+      for (const project of content.projects) {
+        const card = element('a', undefined, 'project-card');
+        card.href = project.url;
+        card.setAttribute('aria-label', 'View '+project.title);
+        card.addEventListener('click', () => {
+          try { sessionStorage.setItem('golf-true-3d-return-scroll', String(window.scrollY)); } catch {}
+        });
+        const media = element('div', undefined, 'hero-banner project-preview');
+        media.setAttribute('aria-label', project.title+' preview');
+        media.inert = true;
+        media.style.setProperty('--preview-scale', String(project.banner.previewScale || 1.65));
+        const copy = element('div', undefined, 'project-copy');
+        copy.append(element('h3', project.title), element('p', project.summary), element('span', page.projectLinkLabel, 'project-link-label'));
+        card.append(media, copy);
+        cards.append(card);
+        // Warm all three previews before they enter view; no tap-to-load gate.
+        const observer = new IntersectionObserver(entries => {
+          if (!entries.some(entry => entry.isIntersecting)) return;
+          observer.disconnect();
+          import(`./materials/projects/${project.id}/hero-banner.js`)
+            .then(module => module.mountBanner(media, project.banner))
+            .catch(error => { console.error(error); media.textContent = 'Preview unavailable'; });
+        }, {rootMargin:'500px'});
+        observer.observe(media);
+      }
+      body.append(cards);
+    }
     if (content.metrics || content.metricGroups) {
       const metricGroups = element('div', undefined, 'metric-groups');
       for (const category of content.metricGroups || [{ metrics: content.metrics }]) {
@@ -112,7 +142,22 @@ async function renderPage() {
     main.append(section);
   }
   document.querySelector('#app').replaceChildren(backdrop, navigationToggle, header, main, element('footer', page.footer));
-  if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  const initialHash = location.hash;
+  let returnScroll = null;
+  if (initialHash === '#projects') {
+    try {
+      const saved = sessionStorage.getItem('golf-true-3d-return-scroll');
+      if (saved !== null && Number.isFinite(Number(saved)) && Number(saved) >= 0) returnScroll = Number(saved);
+    } catch {}
+  }
+  const restorePosition = () => {
+    if (returnScroll !== null) window.scrollTo({top:returnScroll, behavior:'instant'});
+    else document.getElementById(initialHash.slice(1))?.scrollIntoView({behavior:'instant'});
+  };
+  if (initialHash) {
+    restorePosition();
+    requestAnimationFrame(() => requestAnimationFrame(restorePosition));
+  }
 
 }
 

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "05",
+    "name": "Swing 05",
+    "frames": 108,
+    "reconstructionFrames": 108,
+    "alignmentError": null,
+    "fps": 60,
+    "sync": "materials/data/videos/05/sync.json",
+    "views": [
+      {
+        "name": "face-on",
+        "src": "materials/data/previews/05/face-on.mp4",
+        "fps": 60,
+        "frames": 180,
+        "source": "materials/data/videos/05/face-on.mp4"
+      }
+    ]
+  }
+]

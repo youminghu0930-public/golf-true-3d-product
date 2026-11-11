@@ -735,3 +735,101 @@ header[data-expanded=false] { width: 0; padding-inline: 0; border: 0; }
 /* Original #fafbf8c7 wash leaves 56/255 of the scene visible. */
 .hero .hero-banner { background:#fafbf8; }
 .banner-pose-scene { opacity:calc(56 / 255); }
+
+/* Project cards match the RGB-video overview, including its final mobile layout. */
+.project-cards { display:grid; gap:24px; margin-top:28px; }
+.project-card { display:grid; grid-template-columns:minmax(180px,38%) minmax(0,1fr); border:1px solid var(--viewer-border); background:var(--viewer-card); border-radius:12px; overflow:hidden; }
+.project-card .project-preview { min-height:250px; height:100%; margin:0; border:0; border-radius:0; }
+.project-preview::after { display:none; }
+.project-preview .banner-poster,.project-preview .banner-video { object-fit:contain; background:var(--viewer-matte); }
+.project-copy { padding:24px; align-self:center; }
+.project-copy h3 { margin:0 0 12px; }
+.project-copy h3 a { font-size:inherit; color:var(--accent); line-height:1.4; }
+.project-copy p { margin:0; }
+.project-credit { display:inline-block; margin-top:14px; font-size:11px; }
+.demo .comparison-screens { grid-template-columns:minmax(0,1fr); }
+.project-preview .banner-skeleton { opacity:1; }
+.snapshot-comparison .pose-overlay-0 { display:none; }
+@media(max-width:650px) { .project-card {grid-template-columns:1fr;} .project-card .project-preview {height:280px;} .project-copy {padding:20px;} }
+
+.project-preview .pose-overlay { opacity:1; }
+
+/* Compact project rows share a square, consistently framed preview. */
+.project-cards { gap:16px; }
+.project-card { grid-template-columns:200px minmax(0,1fr); min-height:200px; }
+.project-card .project-preview { width:200px; height:200px; min-height:0; aspect-ratio:1; align-self:center; background:var(--viewer-surface); }
+.project-copy { padding:16px 20px; }
+.project-copy h3 { font-size:16px; margin-bottom:8px; }
+.project-copy p { font-size:14px; line-height:1.55; }
+.project-preview::after { display:block; z-index:2; background:#f4f7f026; }
+.project-preview .banner-poster,.project-preview .banner-video { filter:saturate(.65); }
+@media(max-width:650px) {
+ .project-card { grid-template-columns:140px minmax(0,1fr); min-height:140px; }
+ .project-card .project-preview { width:140px; height:140px; }
+ .project-copy { padding:12px; }
+ .project-copy h3 { font-size:14px; }
+ .project-copy p { font-size:12px; line-height:1.45; }
+}
+
+.project-preview, .project-preview * { pointer-events: none !important; user-select: none; -webkit-user-drag: none; }
+
+.snapshot-demo .pose-viewport { touch-action: auto; cursor: default; }
+
+/* Preserve anatomical side colors supplied by the skeleton renderer. */
+.snapshot-demo .pose-overlay .joint-dot { display: block; }
+
+/* Reveal the fixed snapshot as one composed image, never floating overlays. */
+.snapshot-demo[data-ready=false] .snapshot-image-window { opacity:0; }
+.snapshot-demo .snapshot-image-window { transition:opacity 180ms ease; }
+@media(prefers-reduced-motion:reduce) { .snapshot-demo .snapshot-image-window { transition:none; } }
+
+/* The full project card navigates; its embedded animation stays passive. */
+a.project-card { color:inherit; text-decoration:none; }
+a.project-card:hover { color:inherit; text-decoration:none; border-color:var(--accent); }
+a.project-card h3 { color:var(--accent); }
+a.project-card:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+
+/* Keep project copy readable and playback controls tappable on phones. */
+@media (max-width:650px) {
+  .project-cards { grid-auto-rows:1fr; }
+  .project-card { grid-template-columns:112px minmax(0,1fr); }
+  .project-card .project-preview { width:112px; height:112px; }
+  .project-copy { min-width:0; }
+  .playback-controls { gap:4px; }
+  .playback-controls button { width:44px; height:44px; flex:0 0 44px; }
+  .zoom-controls { flex-wrap:wrap; }
+  .zoom-controls button { min-height:44px; }
+}
+@media (max-width:360px) {
+  .project-card { grid-template-columns:96px minmax(0,1fr); }
+  .project-card .project-preview { width:96px; height:96px; }
+  .project-copy { padding:12px 10px; }
+  .demo { padding:10px; }
+  .hero { padding-inline:14px; }
+}
+.project-cards { grid-auto-rows:1fr; }
+
+@media(max-width:360px) { .hero h1 {font-size:28px;overflow-wrap:anywhere;} .hero .eyebrow {overflow-wrap:anywhere;} }
+
+/* On phones the square media spans the card, with readable copy beneath it. */
+@media(max-width:650px) {
+ .project-card { grid-template-columns:minmax(0,1fr); grid-template-rows:auto 1fr; }
+ .project-card .project-preview { width:100%; height:auto; aspect-ratio:1; align-self:start; }
+ .project-copy { padding:16px; }
+ .project-copy h3 { font-size:16px; }
+ .project-copy p { font-size:14px; line-height:1.55; }
+}
+
+
+/* A quiet navigation cue makes the whole-card link clear on touch screens. */
+.project-copy { display:flex; flex-direction:column; align-self:stretch; }
+.project-link-label { align-self:flex-end; margin-top:auto; padding-top:14px; color:var(--accent); font-size:12px; font-weight:500; line-height:1.5; white-space:nowrap; }
+a.project-card:hover .project-link-label, a.project-card:focus-visible .project-link-label { text-decoration:underline; text-underline-offset:3px; }
+#projects { scroll-margin-top:24px; }
+/* Render at the cropped display size instead of stretching a smaller canvas. */
+.project-preview .banner-pose-scene {
+ opacity:1;
+ width:calc(100% * var(--preview-scale, 1.65));
+ height:calc(100% * var(--preview-scale, 1.65));
+ inset:calc((100% - 100% * var(--preview-scale, 1.65)) / 2) auto auto calc((100% - 100% * var(--preview-scale, 1.65)) / 2);
+}

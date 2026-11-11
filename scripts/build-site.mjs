@@ -9,4 +9,5 @@ await fs.mkdir(new URL('dist/materials/', root), {recursive: true});
 for (const file of ['index.html', 'styles.css', 'main.js', '.nojekyll', 'materials/content.json']) {
   await fs.copyFile(new URL(file, root), new URL(`dist/${file}`, root));
 }
-console.log('Built project page in dist/ (media deferred).');
+await fs.cp(new URL('materials/projects/', root), new URL('dist/materials/projects/', root), {recursive:true});
+console.log('Built project page and self-contained project previews in dist/.');

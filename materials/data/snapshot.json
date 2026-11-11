@@ -1,0 +1,10 @@
+{
+  "00": {
+    "range": [
+      0,
+      null
+    ],
+    "fps": 24,
+    "joints": ["golf_club_head"]
+  }
+}

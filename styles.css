@@ -833,3 +833,22 @@ a.project-card:hover .project-link-label, a.project-card:focus-visible .project-
  height:calc(100% * var(--preview-scale, 1.65));
  inset:calc((100% - 100% * var(--preview-scale, 1.65)) / 2) auto auto calc((100% - 100% * var(--preview-scale, 1.65)) / 2);
 }
+
+/* Untitled, autoplaying Abstract overview in the reconstruction snapshot carousel. */
+.overview-snapshots .snapshot-wheel { min-height:0; }
+.overview-snapshots .pose-snapshot.snapshot-card { padding:16px; }
+.snapshot-overview-header { display:flex; align-items:center; gap:12px; position:relative; z-index:5; padding-bottom:16px; }
+.snapshot-overview-header .camera-view-options { flex:1; align-items:center; margin:0; }
+.snapshot-overview-header .section-info .snapshot-info-panel { left:auto; right:0; transform-origin:top right; }
+.snapshot-overview-scene { position:relative; }
+.overview-snapshots .snapshot-overview-scene canvas { height:460px; border:1px solid var(--viewer-border); }
+.snapshot-overview-status { margin:12px 0 0; font-size:13px; }
+.overview-snapshots .video-source-decoders { position:absolute; width:1px; height:1px; overflow:hidden; opacity:.001; pointer-events:none; }
+@media(max-width:600px){
+ .overview-snapshots .pose-snapshot.snapshot-card { width:calc(100% - 24px); padding:12px; }
+ .snapshot-overview-header { gap:4px; align-items:flex-start; }
+ .snapshot-overview-header .camera-view-options { gap:5px; }
+ .snapshot-overview-header .camera-view-label { width:100%; }
+ .snapshot-overview-header .camera-view-options button { padding:7px 9px; font-size:12px; }
+ .overview-snapshots .snapshot-overview-scene canvas { height:350px; }
+}

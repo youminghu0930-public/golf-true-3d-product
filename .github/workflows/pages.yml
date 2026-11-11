@@ -19,6 +19,8 @@ jobs:
         with:
           node-version: '22'
       - uses: actions/configure-pages@v5
+      - name: Verify snapshot transitions
+        run: node --test tests/*.test.mjs
       - name: Build from committed data only
         run: node scripts/build-site.mjs
       - uses: actions/upload-pages-artifact@v3

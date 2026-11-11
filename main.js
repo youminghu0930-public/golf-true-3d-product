@@ -139,6 +139,10 @@ async function renderPage() {
     }
     if(content.note) body.append(element('p',content.note,'section-note'));
     section.append(heading, body);
+    if(content.id==='abstract'){
+      const snapshots=element('div',undefined,'pose-snapshots overview-snapshots');section.append(snapshots);
+      import('./snapshot-viewer.js').then(async module=>{await module.mountSnapshots(snapshots);document.dispatchEvent(new Event('snapshot-layout-ready'));}).catch(error=>{console.error(error);snapshots.textContent='Unable to load snapshot.';});
+    }
     main.append(section);
   }
   document.querySelector('#app').replaceChildren(backdrop, navigationToggle, header, main, element('footer', page.footer));
@@ -154,6 +158,11 @@ async function renderPage() {
     if (returnScroll !== null) window.scrollTo({top:returnScroll, behavior:'instant'});
     else document.getElementById(initialHash.slice(1))?.scrollIntoView({behavior:'instant'});
   };
+  let userInteracted=false;
+  for(const event of ['wheel','touchstart','pointerdown','keydown'])document.addEventListener(event,()=>{userInteracted=true;},{once:true,passive:true});
+  document.addEventListener('snapshot-layout-ready',()=>{
+    if(initialHash&&location.hash===initialHash&&!userInteracted)requestAnimationFrame(restorePosition);
+  },{once:true});
   if (initialHash) {
     restorePosition();
     requestAnimationFrame(() => requestAnimationFrame(restorePosition));

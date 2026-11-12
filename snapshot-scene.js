@@ -1,5 +1,6 @@
+import {createDepthCompositor} from './depth-compositor.js';
 import {snapshotViewCenter} from './snapshot-viewport.js';
-import {createGeometricRotationOverlays} from './rotation-overlays.js';
+import {createMeasurementOverlays} from './rotation-overlays.js';
 import {createHoganPlanes,averageShaftLength} from './hogan-planes.js';
 import {createVector2DOverlay} from './vector-2d-overlay.js';
 import {createCommittedVideoTexture} from './snapshot-texture.js';
@@ -23,7 +24,7 @@ import * as THREE from './materials/projects/pose-information-extraction/vendor/
 import {interpolateRotation,constrainCameraAboveGround,constrainOrbitAboveGround} from './materials/projects/pose-information-extraction/camera-flight.js';
 const valid = p => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
 async function json(url) { const response = await fetch(url); if (!response.ok) throw new Error(`${url}: ${response.status}`); return response.json(); }
-export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, bannerMetrics, snapshotMetrics, videoMetrics, calibratedViews = false, hoganPlanes = false, defaultZoomScale = 1, geometricRotationMetrics, showRawDetections = true } = {}) {
+export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, bannerMetrics, snapshotMetrics, videoMetrics, calibratedViews = false, hoganPlanes = false, defaultZoomScale = 1, measurementMetrics, measurementFeature = 'geometric-rotations', showRawDetections = true } = {}) {
   const poseData = await json(`materials/data/3d_results/${encodeURIComponent(id)}.json`);
   const {reconstruction: frames, calibration, joints: jointNames} = poseData;
   const {names,edges,indexes,clubEdges} = poseStructure(jointNames);
@@ -38,7 +39,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     : configuredRange;
   if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isInteger) || range[0] < 0 || range[1] < range[0] || range[1] >= frames.length) throw new Error('Invalid snapshot frame range');
   const [start,end] = range;
-  const joints = (hoganPlanes ? ['golf_club_head'] : geometricRotationMetrics ? [] : entry.joints || []).map(name => name === 'golf_club_haed' ? 'golf_club_head' : name);
+  const joints = (hoganPlanes ? ['golf_club_head'] : measurementMetrics ? [] : entry.joints || []).map(name => name === 'golf_club_haed' ? 'golf_club_head' : name);
   if (joints.some(name => !names.includes(name))) throw new Error('Unknown trail joint');
   let frame = Math.min(end, Math.max(start, snapshot?.frame ?? entry.highlight_index ?? start));
   let yaw = 0, pitch = 0, zoom = 2, distanceScale = 1;
@@ -83,7 +84,9 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#f4f7f0');
   const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-  registerViewerCapture(canvas,()=>renderer.render(scene,camera));
+  const depthCompositor=showCameras&&!bannerMode?createDepthCompositor(renderer):null;
+  const renderScene=()=>depthCompositor?depthCompositor.render(scene,camera):renderer.render(scene,camera);
+  registerViewerCapture(canvas,renderScene);
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -108,10 +111,11 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const boneRadius = .012, jointRadius = .022;
   const cylinder = new THREE.CylinderGeometry(1,1,1,16);
   const surface=createPoseSurface(boneRadius,jointRadius);
+  const translucentTranslation=measurementFeature==='hip-translation';
   const sphere = new THREE.SphereGeometry(jointRadius,24,16);
   const axis = new THREE.Vector3(0,1,0);
   const bones = edges.map(([a,b])=>{
-    const mesh = new THREE.Mesh(cylinder,boneMaterial); mesh.castShadow=true;mesh.receiveShadow=false;if(bannerMode)mesh.renderOrder=2;scene.add(mesh);return {a,b,mesh};
+    const mesh = translucentTranslation?surface.bone(boneMaterial):new THREE.Mesh(cylinder,boneMaterial); mesh.castShadow=true;mesh.receiveShadow=false;if(bannerMode)mesh.renderOrder=2;scene.add(mesh);return {a,b,mesh};
   });
   const dots = names.map((name,i)=>{
     const jointMaterial=jointMaterials[name.startsWith('left_')?'left':name.startsWith('right_')?'right':'center'];
@@ -150,7 +154,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     referenceGroup.traverse(object=>{if(object.isMesh)setupPoseShadow(object);});
   }
   function setSnapshotPoseOpacity(referenceOpacity,selectedOpacity,jointHighlights=[],boneHighlights=[]){
-    if(!snapshot&&!videoMetrics)return;
+    if(!snapshot&&!videoMetrics&&!measurementMetrics)return;
     selectedPoseOpacity=selectedOpacity;
     updatePoseShadowStrength(light,referenceOpacity,selectedOpacity);
     if(referenceGroup)referenceGroup.visible=referenceOpacity>.001;
@@ -210,6 +214,9 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     }
     const trailMaterial=material('#ffffff');
     trailMaterial.transparent=true;trailMaterial.depthWrite=false;
+    // Every depth/color program must share the same live playback clock.
+    const trailUniforms={playbackFrame:{value:frame},historyFrames:{value:Math.max(1,(end-start+1)*.3)}};
+    trailMaterial.userData.playbackFrame=trailUniforms.playbackFrame;
     trailMaterial.onBeforeCompile=shader=>{
       if(hoganPlanes){
         shader.vertexShader='attribute vec3 trailFrom; attribute vec3 trailTo; varying vec3 trailPoint;\n'+shader.vertexShader;
@@ -237,8 +244,8 @@ bool finished=trailAge<=playbackFrame;
 diffuseColor.rgb=finished?(inside?insideColor:(nearPlane?toleranceColor:outsideColor)):futureColor;
 diffuseColor.a*=finished?1.0:0.5;`
         : '#include <color_fragment>\nfloat age = playbackFrame - trailAge;\nif (age < 0.0 || age >= historyFrames) discard;\ndiffuseColor.a *= 1.0 - age / historyFrames;');
-      shader.uniforms.playbackFrame={value:frame};
-      shader.uniforms.historyFrames={value:Math.max(1,(end-start+1)*.3)};
+      shader.uniforms.playbackFrame=trailUniforms.playbackFrame;
+      shader.uniforms.historyFrames=trailUniforms.historyFrames;
       trailMaterial.userData.shader=shader;
     };
     for(const [items,geometry,isSegment] of [[segments,trailCylinder,true],[samples,trailSphere,false]]) {
@@ -269,7 +276,7 @@ diffuseColor.a*=finished?1.0:0.5;`
   const historyStride=Math.max(1,Math.round(fps*.1));
   const historyWindow=Math.max(1,(end-start+1)*.3);
   const clubSpeeds=speeds.get('golf_club_head') || speeds.get(joints[0]);
-  for(let f=start;!hoganPlanes&&!geometricRotationMetrics&&f<=end;f+=historyStride){
+  for(let f=start;!hoganPlanes&&!measurementMetrics&&f<=end;f+=historyStride){
     const segments=[];
     for(const [a,b] of clubEdges){
       if(!valid(frames[f]?.[a])||!valid(frames[f]?.[b]))continue;
@@ -476,14 +483,9 @@ diffuseColor.a*=finished?1.0:0.5;`
       geometry.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));
       // Transparent panes do not write depth or cast solid shadows over the pose.
       const color=i?'#e6ad53':'#68adc6';
-      const glassMaterial=new THREE.MeshPhysicalMaterial({color:'#edf6f4',transparent:true,opacity:.23,roughness:.07,metalness:0,ior:1.45,reflectivity:1,clearcoat:1,clearcoatRoughness:.06,envMap:environment,envMapIntensity:.8,side:THREE.DoubleSide,depthWrite:false});
-      // Stronger rim reflection at grazing angles, without opaque pane interiors.
-      glassMaterial.onBeforeCompile=shader=>{
-        shader.vertexShader='varying vec2 glassUV;\n'+shader.vertexShader;
-        shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nglassUV=uv;');
-        shader.fragmentShader='varying vec2 glassUV;\n'+shader.fragmentShader;
-        shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\nfloat paneFresnel=pow(1.0-abs(dot(normalize(vNormal),normalize(vViewPosition))),3.0);\nfloat paneSheen=exp(-pow((glassUV.x+glassUV.y*0.45-0.72)/0.085,2.0));\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(1.0),0.55*paneSheen);\ndiffuseColor.a += 0.23*paneFresnel+0.09*paneSheen;');
-      };
+      // Even tinted surfaces preserve the original component opacity without
+      // lighting or a moving white sheen changing color across the plane.
+      const glassMaterial=new THREE.MeshBasicMaterial({color,transparent:true,opacity:.23,side:THREE.DoubleSide,depthWrite:false});
       const glass=new THREE.Mesh(geometry,glassMaterial);
       glass.name=pane.name;glass.receiveShadow=false;group.add(glass);
       // Leave the front edge out of each outline; draw their common edge once.
@@ -596,6 +598,11 @@ diffuseColor.a*=finished?1.0:0.5;`
     const halfFov=Math.min(verticalHalfFov,Math.atan(Math.tan(verticalHalfFov)*camera.aspect));
     let distance=Math.max(bound,cameraBound*.85)*distanceScale/(Math.sin(halfFov)*.84);
     const cameraTarget=snapshotFocus.clone();
+    if(measurementFeature==='hip-translation'){
+      const pose=poseData.reconstruction[0],names=poseData.joints;
+      const hip=pose[names.indexOf('root')]??pose[names.indexOf('left_hip')].map((v,i)=>(v+pose[names.indexOf('right_hip')][i])/2);
+      cameraTarget.copy(vector(hip));
+    }
     let snapshotFitView;
     if(snapshot&&snapshotCamera){
       const direction=vector(snapshotCamera.direction.map((v,i)=>v+center[i])).normalize();
@@ -639,6 +646,14 @@ diffuseColor.a*=finished?1.0:0.5;`
     if(preset&&bottomStrip)camera.zoom*=viewport.cameraZoomScale*.9;
     // Apply the same default framing scale before interpolating either POV.
     camera.zoom*=defaultZoomScale;
+    if(preset&&measurementFeature==='hip-translation'){
+      // Measure baseline framing without user pan so dragging stays unrestricted.
+      camera.setViewOffset(w,h,viewport.offsetX+viewPanX,viewport.offsetY+viewPanY,w,h);
+      camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
+      const projected=cameraTarget.clone().project(camera);
+      camera.setViewOffset(w,h,viewport.offsetX+projected.x*w/2,viewport.offsetY,w,h);
+    }
+    const targetOffsetX=camera.view?.offsetX??viewport.offsetX,targetOffsetY=camera.view?.offsetY??viewport.offsetY;
     if(cameraFlight){
       const t=cameraFlight.progress;
       camera.near=THREE.MathUtils.lerp(cameraFlight.near,camera.near,t);
@@ -649,7 +664,7 @@ diffuseColor.a*=finished?1.0:0.5;`
         camera.fov=THREE.MathUtils.lerp(cameraFlight.fov,camera.fov,t);
         camera.zoom=THREE.MathUtils.lerp(cameraFlight.zoom,camera.zoom,t);
       }
-      if(enablePan||bottomStrip)camera.setViewOffset(w,h,THREE.MathUtils.lerp(cameraFlight.offsetX,viewport.offsetX,t),THREE.MathUtils.lerp(cameraFlight.offsetY,viewport.offsetY,t),w,h);
+      if(enablePan||bottomStrip)camera.setViewOffset(w,h,THREE.MathUtils.lerp(cameraFlight.offsetX,targetOffsetX,t),THREE.MathUtils.lerp(cameraFlight.offsetY,targetOffsetY,t),w,h);
     }
     if(snapshotCamera){
       const {direction}=snapshotFitView,up=snapshotFitView.manual.up;
@@ -671,17 +686,19 @@ diffuseColor.a*=finished?1.0:0.5;`
       mesh.visible=selectedPoseOpacity>.001&&valid(pose[a])&&valid(pose[b]);if(!mesh.visible)continue;
       const from=vector(pose[a]),to=vector(pose[b]),delta=to.clone().sub(from),length=delta.length();
       mesh.visible=length>1e-8;if(!mesh.visible)continue;
-      // Full-length bones meet the intact joint spheres without a visual seam.
-      mesh.position.copy(from).add(to).multiplyScalar(.5);
-      mesh.quaternion.setFromUnitVectors(axis,delta.normalize());mesh.scale.set(boneRadius,length,boneRadius);
+      if(translucentTranslation)surface.placeBone(mesh,from,to);
+      else{
+        // Solid feature cards retain their full-length connections.
+        mesh.position.copy(from).add(to).multiplyScalar(.5);
+        mesh.quaternion.setFromUnitVectors(axis,delta.normalize());mesh.scale.set(boneRadius,length,boneRadius);
+      }
     }
     dots.forEach((mesh,i)=>{if(!mesh)return;mesh.visible=selectedPoseOpacity>.001&&valid(pose[i]);if(mesh.visible){if(bannerMode)mesh.position.copy(vector(pose[i]));else surface.placeJoint(mesh,vector(pose[i]));}});
     for(const trail of trails){
       let low=0,high=trail.frames.length;
       while(low<high){const middle=(low+high)>>>1;if(trail.frames[middle]<=frame)low=middle+1;else high=middle;}
       trail.mesh.count=hoganPlanes?trail.frames.length:low;
-      const shader=trail.mesh.material.userData.shader;
-      if(shader)shader.uniforms.playbackFrame.value=frame;
+      trail.mesh.material.userData.playbackFrame.value=frame;
     }
     for(const past of clubHistory){
       const age=frame-past.frame;
@@ -691,7 +708,7 @@ diffuseColor.a*=finished?1.0:0.5;`
     camera.updateMatrixWorld();
     vectorOverlay.render({camera,scene,overlays:rawOverlays,frame,w,h});
     canvas.dataset.frame=String(frame);
-    renderer.render(scene,camera);snapshotOverlayView?.(camera,w,h);
+    renderScene();snapshotOverlayView?.(camera,w,h);
   }
   // Wheel and pinch share an uncapped zoom-in range across features and POVs.
   // Keep the existing overview zoom-out floor and reject numerical overflow.
@@ -802,7 +819,7 @@ diffuseColor.a*=finished?1.0:0.5;`
     setFrame(value){frame=Math.max(start,Math.min(end,Math.floor(value)));metricOverlays?.setFrame(frame);draw();},
     setMetricSelection(metric,keys=[]){metricOverlays?.setMetric(metric,keys);draw();},
     setMeasurementSelection(keys){metricOverlays?.setSelection(keys);draw();},
-    dispose(){cancelAnimationFrame(flightHandle);mediaCleanup.forEach(cleanup=>cleanup());disposed=true;cancelAnimationFrame(animationHandle);resizeObserver.disconnect();renderer.dispose();const geometries=new Set(),materials=new Set();scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});geometries.forEach(g=>g.dispose());materials.forEach(m=>{m.map?.dispose();m.dispose();});},
+    dispose(){cancelAnimationFrame(flightHandle);mediaCleanup.forEach(cleanup=>cleanup());disposed=true;cancelAnimationFrame(animationHandle);resizeObserver.disconnect();depthCompositor?.dispose();renderer.dispose();const geometries=new Set(),materials=new Set();scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});geometries.forEach(g=>g.dispose());materials.forEach(m=>{m.map?.dispose();m.dispose();});},
   };
   if(bannerMode&&bannerMetrics){
     metricOverlays=createBannerOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:bannerMetrics,requestRender:draw});
@@ -812,8 +829,9 @@ diffuseColor.a*=finished?1.0:0.5;`
     metricOverlays=createVideoMetricOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:videoMetrics,requestRender:draw,setPoses:setSnapshotPoseOpacity});
     snapshotOverlayView=metricOverlays.updateView;mediaCleanup.push(()=>metricOverlays.dispose());
   }
-  if(geometricRotationMetrics){
-    metricOverlays=createGeometricRotationOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:geometricRotationMetrics,requestRender:draw});
+  if(measurementMetrics){
+    if(measurementFeature==='hip-translation')setSnapshotPoseOpacity(0,.35);
+    metricOverlays=createMeasurementOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:measurementMetrics,feature:measurementFeature,requestRender:draw});
     snapshotOverlayView=metricOverlays.updateView;mediaCleanup.push(()=>metricOverlays.dispose());
   }
   if(snapshot){

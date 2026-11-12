@@ -9,7 +9,8 @@ export function sectorBoundary(spec,count=96){
  const points=Array.from({length:count+1},(_,i)=>{
   const t=i/count,arc=mul(rotate(spec.from,spec.normal,spec.angle*t),spec.radius);
   const edge=t<=.5?add(a,mul(b,t*2)):add(mul(a,(1-t)*2),b);
-  return add(spec.origin,add(mul(arc,1-amount),mul(edge,amount)));
+  const offset=add(mul(arc,1-amount),mul(edge,amount));
+  return add(spec.origin,offset);
  });
  return {points,amount};
 }

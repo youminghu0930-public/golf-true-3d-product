@@ -916,3 +916,10 @@ a.project-card:hover .project-link-label, a.project-card:focus-visible .project-
 .snapshot-rotation-plots .snapshot-rotation-chart { height:23px; }
 .snapshot-rotation-plots .snapshot-rotation-ticks { font-size:8px; }
 @media(max-width:600px){ .snapshot-rotation-plots .snapshot-rotation-plot { height:auto;padding:3px 6px 4px; } .snapshot-rotation-plots .snapshot-rotation-chart { height:23px; } }
+
+/* Shared measurement strip: two or three groups, one unchanged outer height. */
+.snapshot-rotation-plots { grid-template-rows:repeat(var(--measurement-rows,3),minmax(0,1fr)); }
+.snapshot-rotation-plots .snapshot-rotation-plot { padding:3px 9px 4px; }
+.snapshot-rotation-plots .snapshot-rotation-legend { line-height:10px; margin-bottom:4px; }
+.snapshot-rotation-plots .snapshot-rotation-chart { height:var(--measurement-chart-height,20px); }
+@media(max-width:600px){ .snapshot-rotation-plots .snapshot-rotation-plot { padding:3px 6px 4px; } .snapshot-rotation-plots .snapshot-rotation-chart { height:var(--measurement-chart-height,20px); } }

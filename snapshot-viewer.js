@@ -1,3 +1,4 @@
+import {measurementFeatureForTitle} from './measurement-features.js';
 import {createSnapshotPipeline} from './snapshot-pipeline.js';
 import {mountPoseScene} from './snapshot-scene.js';
 import {createViewerInfo} from './viewer-info.js';
@@ -80,9 +81,9 @@ async function mountSnapshotCard(card,id,entry,title,key){
   scene.append(status);card.append(header,scene,decoders);
   const feature=title.toLowerCase();
   const hoganPlanes=feature.startsWith("hogan's plane");
-  const geometricRotations=feature.startsWith('absolute hip, shoulder rotations');
-  const showRawDetections=!hoganPlanes&&!geometricRotations;
-  if(feature!=='club movement'&&!hoganPlanes&&!geometricRotations){
+  const measurementFeature=measurementFeatureForTitle(title);
+  const showRawDetections=!hoganPlanes&&!measurementFeature;
+  if(feature!=='club movement'&&!hoganPlanes&&!measurementFeature){
     status.remove();card.dataset.ready='true';return;
   }
   const catalog=await json('materials/data/snapshot-videos.json'),clip=catalog.find(clip=>clip.id===id);
@@ -96,8 +97,8 @@ async function mountSnapshotCard(card,id,entry,title,key){
     videos[view.name]=video;decoders.append(video);
   }
   // Build the 3D scene without waiting for either videos or 2D data.
-  const geometricRotationMetrics=geometricRotations?await json(`materials/data/metrics/${id}.json`):undefined;
-  const controller=await mountPoseScene(scene,id,{...entry,range:[0,clip.frames-1],fps:clip.fps},{showCameras:true,autoPlay:false,cameraVideos:videos,hoganPlanes,defaultZoomScale:1.25,geometricRotationMetrics,showRawDetections});
+  const measurementMetrics=measurementFeature?await json(`materials/data/metrics/${id}.json`):undefined;
+  const controller=await mountPoseScene(scene,id,{...entry,joints:entry.joints??['golf_club_head'],range:[0,clip.frames-1],fps:clip.fps},{showCameras:true,autoPlay:false,cameraVideos:videos,hoganPlanes,defaultZoomScale:measurementFeature==='hip-translation'?3.5:1.25,measurementMetrics,measurementFeature,showRawDetections});
   clip.views.forEach((view,i)=>{
     const video=videos[view.name];
     if(showRawDetections)json(`materials/data/2d_detections/${id}/${view.name}.json`).then(raw=>{

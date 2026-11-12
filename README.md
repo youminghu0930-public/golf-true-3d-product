@@ -81,3 +81,10 @@ Snapshot playback uses `materials/data/previews/00/*-seek.mp4`: H.264 previews w
 To regenerate them after replacing the original preview videos, run `node scripts/prepare-snapshot-previews.mjs` (requires ffmpeg/ffprobe). The script verifies every output frame timestamp against the original `.frames.json` before updating the catalog. Ordinary serving and Pages builds do not require ffmpeg.
 
 Append `?snapshotPerf=1` to the local page URL to expose rolling presentation-gap and render-time measurements in each card's `data-playback-stats` attribute. Timing collection is disabled for normal visits. `sync.json` mapping and the exact decoded-frame presentation barrier remain unchanged.
+
+
+### Measurement feature cards
+
+`measurement-features.js` defines each card's exact metric recipes, selected components, labels, plane shapes and group colors. `rotation-overlays.js` shares the no-arrow surfaces, fixed-radius sizing, solid skeleton and stationary two-line flags across geometric hip/shoulder rotations + X-factor, geometric spine bend/side tilt, and body hip/shoulder turns. The spine card uses the geometric `spine_bend_tilt` measurements on square planes. The body-turn card uses the kinematic shoulder/hip turns on the moving lower-spine plane, with fixed-radius circles.
+
+All measurement cards share the 130px translucent plot strip, legend toggles, visible-series autoscaling, hover readouts and frame-synchronized cursor. Compact Y labels show only the extrema and are inset for spacing; the zero grid line needs no label. The existing clear-area center, pan/zoom behavior, and extra camera-view zoom-out apply automatically to every card containing that strip. These cards do not show raw 2D detections or club history.

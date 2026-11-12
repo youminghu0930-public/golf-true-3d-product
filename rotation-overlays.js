@@ -1,11 +1,13 @@
+import {createTranslationOverlay} from './translation-overlay.js';
+import {measurementFeatures} from './measurement-features.js';
 import {createXFactorModel,createXFactorOverlay} from './x-factor.js';
 import {rotationColors} from './rotation-style.js';
 import {createRotationPlot} from './rotation-plot.js';
 import {add,mul,rotate} from './materials/projects/pose-information-extraction/explain/math.js';
 import {createVideoMetricOverlays} from './materials/projects/pose-information-extraction/explain/ui/video-overlays.js';
 
-// Share the video's completed geometric measurements and the banner's solid,
-// surface-only presentation. Each body region shows turn and tilt together.
+// Use completed video measurements with the banner's solid, surface-only
+// presentation. Feature definitions choose the selected metrics and plane shapes.
 export function fixedRotationRadius(data){
   const left=data.joints.indexOf('left_shoulder'),right=data.joints.indexOf('right_shoulder');
   const lengths=data.reconstruction.flatMap(pose=>{
@@ -16,8 +18,12 @@ export function fixedRotationRadius(data){
   if(!lengths.length)throw new Error('Missing shoulder width for rotation radius');
   return lengths.reduce((sum,value)=>sum+value,0)/lengths.length*1.95;
 }
-export function prepareRotationSurfaces(state,radius,color){
-  const plane=spec=>spec?{...spec,size:radius,color,shape:'circle',opacity:1,fillOpacity:.12}:spec;
+export function prepareMeasurementSurfaces(state,radius,group){
+  const {color,shape}=group;
+  // Scale reference surfaces about their attachment to the skeleton.
+  // Sector directions remain independent of these display dimensions.
+  const stretch=axis=>axis?.map((value,index)=>value*(index===1?(group.verticalScale??1):(group.horizontalScale??1)));
+  const plane=spec=>spec?{...spec,u:stretch(spec.u),v:stretch(spec.v),size:radius,color,shape,opacity:1,fillOpacity:.12}:spec;
   const surfaces=axes=>{
     if(!axes)return axes;
     const {x,y,z,angleMarker,projectionSweep,...rest}=axes;
@@ -25,16 +31,22 @@ export function prepareRotationSurfaces(state,radius,color){
   };
   return {...state,referenceAxes:surfaces(state.referenceAxes),torsoAxes:surfaces(state.torsoAxes),originalReferenceAxes:surfaces(state.originalReferenceAxes),
     // Turn and tilt share a horizontal reference plane; render it only once.
-    plane:state.active==='turn'?plane(state.plane):null,guides:[],
-    sectors:state.sectors?.map(sector=>({...sector,radius,color,opacity:1,fillOpacity:.38,outline:true})),
+    plane:group.planeKeys.includes(state.active)?plane(state.plane):null,guides:[],
+    sectors:state.sectors?.map(sector=>({...sector,radius:radius*(group.verticalScale??1),color,opacity:1,fillOpacity:.38,outline:true})),
   };
 }
-export function createGeometricRotationOverlays(options){
+// Preserve the original helper for the geometric hip/shoulder regression checks.
+export function prepareRotationSurfaces(state,radius,color){
+  return prepareMeasurementSurfaces(state,radius,{color,shape:'circle',planeKeys:['turn']});
+}
+export function createMeasurementOverlays(options){
+  const feature=options.feature??'geometric-rotations',definition=measurementFeatures[feature];
+  if(!definition)throw new Error(`Unknown measurement feature: ${feature}`);
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
   svg.classList.add('rotation-angle-labels');svg.setAttribute('aria-hidden','true');options.canvas.parentElement.append(svg);
   const labels=new Map(),radius=fixedRotationRadius(options.data);
-  const xFactorModel=createXFactorModel(options.data,options.metrics);
-  const plot=createRotationPlot({canvas:options.canvas,metrics:options.metrics,frameCount:options.data.reconstruction.length,xFactorValues:xFactorModel.frames.map(state=>state?.angle??null)});
+  const xFactorModel=definition.xfactor?createXFactorModel(options.data,options.metrics):null;
+  const plot=createRotationPlot({canvas:options.canvas,metrics:options.metrics,frameCount:options.data.reconstruction.length,feature,xFactorValues:xFactorModel?.frames.map(state=>state?.angle??null)});
   const makeLabel=(id,title,color)=>{
     const group=document.createElementNS(ns,'g'),line=document.createElementNS(ns,'path'),dot=document.createElementNS(ns,'circle'),box=document.createElementNS(ns,'rect'),text=document.createElementNS(ns,'text'),kind=document.createElementNS(ns,'text'),value=document.createElementNS(ns,'text');
     line.setAttribute('fill','none');line.setAttribute('stroke-linejoin','round');
@@ -46,29 +58,35 @@ export function createGeometricRotationOverlays(options){
     kind.setAttribute('font-size','10');kind.setAttribute('y','28');value.setAttribute('font-size','15');value.setAttribute('font-weight','600');value.setAttribute('y','34');
     group.append(box,text,kind,value);svg.append(line,dot,group);const label={group,line,dot,box,text,kind,value,title};labels.set(id,label);return label;
   };
-  const overlays=['shoulder_turn_tilt','hip_turn_tilt'].map(subtype=>{
-    const region=subtype.startsWith('shoulder')?'Shoulder':'Hip';
-    const color=rotationColors[region.toLowerCase()];
-    for(const key of ['turn','tilt'])makeLabel(`${subtype}:${key}`,`${region} ${key}`,color);
+  const overlays=definition.combined?[]:definition.groups.map(group=>{
+    for(const key of group.keys)makeLabel(`${group.id}:${key}`,group.labels[key],group.color);
     const overlay=createVideoMetricOverlays({...options,setPoses:()=>{},axisWidthScale:1.4,prepareState:state=>{
-      const prepared=prepareRotationSurfaces(state,radius,color),label=labels.get(`${subtype}:${state.active}`);
+      const prepared=prepareMeasurementSurfaces(state,radius,group),label=labels.get(`${group.id}:${state.active}`);
       if(label)label.sector=prepared.sectors?.[0];
       return prepared;
     }});
-    overlay.setMetric({type:'geometric',subtype},['turn','tilt']);
+    overlay.setMetric({type:group.type,subtype:group.subtype},group.keys);
     return overlay;
   });
-  const xFactorLabel=makeLabel('xfactor','X-factor',rotationColors.xfactor);
-  const xFactor=createXFactorOverlay(options,xFactorModel,radius);xFactorLabel.sector=xFactor.setFrame(0);
+  if(definition.combined){
+    for(const group of definition.groups)makeLabel(`${group.id}:${group.id}`,group.label,group.color);
+    overlays.push(createTranslationOverlay(options,definition.groups,labels));
+  }
+  let xFactor,xFactorLabel;
+  if(xFactorModel){
+    xFactorLabel=makeLabel('xfactor','X-factor',rotationColors.xfactor);
+    xFactor=createXFactorOverlay(options,xFactorModel,radius);xFactorLabel.sector=xFactor.setFrame(0);
+  }
   return {
-    setFrame(frame){overlays.forEach(overlay=>overlay.setFrame(frame));xFactorLabel.sector=xFactor.setFrame(frame);plot.setFrame(frame);},
+    setFrame(frame){overlays.forEach(overlay=>overlay.setFrame(frame));if(xFactor)xFactorLabel.sector=xFactor.setFrame(frame);plot.setFrame(frame);},
     updateView(camera,w,h){
       overlays.forEach(overlay=>overlay.updateView(camera,w,h));svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
       const order=[...labels.keys()];
       for(const [id,label] of labels){
         const sector=label.sector;
-        if(!sector){label.group.style.display=label.line.style.display=label.dot.style.display='none';continue;}
-        const point=options.toWorld(add(sector.origin,mul(rotate(sector.from,sector.normal,sector.angle*.5),sector.radius*.96)));
+        if(!sector&&!label.anchor){label.group.style.display=label.line.style.display=label.dot.style.display='none';continue;}
+        const offset=sector?mul(rotate(sector.from,sector.normal,sector.angle*.5),sector.radius*.96):[0,0,0];
+        const point=options.toWorld(label.anchor??add(sector.origin,offset));
         const projected=point.clone().project(camera);
         const visible=point.clone().applyMatrix4(camera.matrixWorldInverse).z<0&&projected.z>=-1&&projected.z<=1&&Math.abs(projected.x)<1.15&&Math.abs(projected.y)<1.15;
         label.group.style.display=label.line.style.display=label.dot.style.display=visible?'':'none';if(!visible)continue;
@@ -78,15 +96,15 @@ export function createGeometricRotationOverlays(options){
         label.group.setAttribute('transform',`translate(${x},${y})`);
         label.box.setAttribute('width',tagWidth);label.text.setAttribute('font-size','10');
         const [region,measurement]=label.title.split(' ');
-        label.text.textContent=w<260&&measurement?`${region[0]}. ${measurement}`:label.title;
+        label.text.textContent=w<260&&label.title.length>16?label.title.replace('Shoulder','Sh.').replace('Spine','Sp.'):label.title;
         label.kind.textContent='';
-        label.value.setAttribute('font-size',w<260?'11':'15');label.value.textContent=`${sector.angle.toFixed(1)}°`;
-        label.group.setAttribute('aria-label',`${label.title}: ${sector.angle.toFixed(1)} degrees`);
+        label.value.setAttribute('font-size',w<260?'11':'15');label.value.textContent=sector?`${sector.angle.toFixed(1)}°`:`${label.measurement.toFixed(3)} units`;
+        label.group.setAttribute('aria-label',`${label.title}: ${label.value.textContent}`);
         // Inverted L: rise from the angle, then enter the box at left-center.
         label.line.setAttribute('d',`M ${px} ${py} V ${y+22} H ${x}`);
         label.dot.setAttribute('cx',px);label.dot.setAttribute('cy',py);
       }
     },
-    dispose(){overlays.forEach(overlay=>overlay.dispose());svg.remove();plot.dispose();xFactor.dispose();},
+    dispose(){overlays.forEach(overlay=>overlay.dispose());svg.remove();plot.dispose();xFactor?.dispose();},
   };
 }

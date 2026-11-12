@@ -1,3 +1,4 @@
+import {snapshotViewCenter} from './snapshot-viewport.js';
 import {createGeometricRotationOverlays} from './rotation-overlays.js';
 import {createHoganPlanes,averageShaftLength} from './hogan-planes.js';
 import {createVector2DOverlay} from './vector-2d-overlay.js';
@@ -584,8 +585,11 @@ diffuseColor.a*=finished?1.0:0.5;`
     camera.aspect=w/h;
     const viewZoom=navigation?.zoom??zoom,viewPanX=navigation?.panX??panX,viewPanY=navigation?.panY??panY;
     camera.zoom=viewZoom*snapshotFocusZoom*(selectedView==='free-view'?6:1);
-    // Shift the projection for panning, leaving the world-space orbit center fixed.
-    if(enablePan)camera.setViewOffset(w,h,-viewPanX,-viewPanY,w,h);
+    const bottomStrip=card.querySelector('.snapshot-bottom-strip');
+    const viewport=snapshotViewCenter(h,bottomStrip?.offsetTop??h,viewPanX,viewPanY);
+    // The plot strip shifts the optical center upward. User pan remains an
+    // independent offset, so wheel/pinch zoom stays centered in the clear area.
+    if(enablePan||bottomStrip)camera.setViewOffset(w,h,viewport.offsetX,viewport.offsetY,w,h);
     // Fit the complete motion using the narrower viewport angle.
     camera.fov=45;
     const verticalHalfFov=THREE.MathUtils.degToRad(camera.fov/2);
@@ -630,6 +634,9 @@ diffuseColor.a*=finished?1.0:0.5;`
       camera.quaternion.copy(orbit).multiply(preset.rotation);
       camera.fov=THREE.MathUtils.radToDeg(2*Math.atan((bannerMode?width/(2*preset.K[0][0]*camera.aspect):Math.max(height/(2*preset.K[1][1]),width/(2*preset.K[0][0]*camera.aspect)))));
     }
+    // Calibrated views fit the usable height above the plot, while manual
+    // zoom remains a multiplier around that clear-area baseline.
+    if(preset&&bottomStrip)camera.zoom*=viewport.cameraZoomScale*.9;
     // Apply the same default framing scale before interpolating either POV.
     camera.zoom*=defaultZoomScale;
     if(cameraFlight){
@@ -642,7 +649,7 @@ diffuseColor.a*=finished?1.0:0.5;`
         camera.fov=THREE.MathUtils.lerp(cameraFlight.fov,camera.fov,t);
         camera.zoom=THREE.MathUtils.lerp(cameraFlight.zoom,camera.zoom,t);
       }
-      if(enablePan)camera.setViewOffset(w,h,THREE.MathUtils.lerp(cameraFlight.offsetX,-panX,t),THREE.MathUtils.lerp(cameraFlight.offsetY,-panY,t),w,h);
+      if(enablePan||bottomStrip)camera.setViewOffset(w,h,THREE.MathUtils.lerp(cameraFlight.offsetX,viewport.offsetX,t),THREE.MathUtils.lerp(cameraFlight.offsetY,viewport.offsetY,t),w,h);
     }
     if(snapshotCamera){
       const {direction}=snapshotFitView,up=snapshotFitView.manual.up;
@@ -695,7 +702,7 @@ diffuseColor.a*=finished?1.0:0.5;`
   const zoomAroundWindow=ratio=>{
     const next=clampZoom(zoom*ratio),applied=next/zoom;
     // Scale the projection offset with zoom so its fixed point is the
-    // viewport center, even after a manual pan.
+    // clear-area center, even after a manual pan.
     panX*=applied;panY*=applied;zoom=next;
   };
   if(snapshot){

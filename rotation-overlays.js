@@ -1,3 +1,4 @@
+import {createXFactorModel,createXFactorOverlay} from './x-factor.js';
 import {rotationColors} from './rotation-style.js';
 import {createRotationPlot} from './rotation-plot.js';
 import {add,mul,rotate} from './materials/projects/pose-information-extraction/explain/math.js';
@@ -32,7 +33,8 @@ export function createGeometricRotationOverlays(options){
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
   svg.classList.add('rotation-angle-labels');svg.setAttribute('aria-hidden','true');options.canvas.parentElement.append(svg);
   const labels=new Map(),radius=fixedRotationRadius(options.data);
-  const plot=createRotationPlot({canvas:options.canvas,metrics:options.metrics,frameCount:options.data.reconstruction.length});
+  const xFactorModel=createXFactorModel(options.data,options.metrics);
+  const plot=createRotationPlot({canvas:options.canvas,metrics:options.metrics,frameCount:options.data.reconstruction.length,xFactorValues:xFactorModel.frames.map(state=>state?.angle??null)});
   const makeLabel=(id,title,color)=>{
     const group=document.createElementNS(ns,'g'),line=document.createElementNS(ns,'path'),dot=document.createElementNS(ns,'circle'),box=document.createElementNS(ns,'rect'),text=document.createElementNS(ns,'text'),kind=document.createElementNS(ns,'text'),value=document.createElementNS(ns,'text');
     line.setAttribute('fill','none');line.setAttribute('stroke-linejoin','round');
@@ -56,8 +58,10 @@ export function createGeometricRotationOverlays(options){
     overlay.setMetric({type:'geometric',subtype},['turn','tilt']);
     return overlay;
   });
+  const xFactorLabel=makeLabel('xfactor','X-factor',rotationColors.xfactor);
+  const xFactor=createXFactorOverlay(options,xFactorModel,radius);xFactorLabel.sector=xFactor.setFrame(0);
   return {
-    setFrame(frame){overlays.forEach(overlay=>overlay.setFrame(frame));plot.setFrame(frame);},
+    setFrame(frame){overlays.forEach(overlay=>overlay.setFrame(frame));xFactorLabel.sector=xFactor.setFrame(frame);plot.setFrame(frame);},
     updateView(camera,w,h){
       overlays.forEach(overlay=>overlay.updateView(camera,w,h));svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
       const order=[...labels.keys()];
@@ -74,7 +78,7 @@ export function createGeometricRotationOverlays(options){
         label.group.setAttribute('transform',`translate(${x},${y})`);
         label.box.setAttribute('width',tagWidth);label.text.setAttribute('font-size','10');
         const [region,measurement]=label.title.split(' ');
-        label.text.textContent=w<260?`${region[0]}. ${measurement}`:label.title;
+        label.text.textContent=w<260&&measurement?`${region[0]}. ${measurement}`:label.title;
         label.kind.textContent='';
         label.value.setAttribute('font-size',w<260?'11':'15');label.value.textContent=`${sector.angle.toFixed(1)}°`;
         label.group.setAttribute('aria-label',`${label.title}: ${sector.angle.toFixed(1)} degrees`);
@@ -83,6 +87,6 @@ export function createGeometricRotationOverlays(options){
         label.dot.setAttribute('cx',px);label.dot.setAttribute('cy',py);
       }
     },
-    dispose(){overlays.forEach(overlay=>overlay.dispose());svg.remove();plot.dispose();},
+    dispose(){overlays.forEach(overlay=>overlay.dispose());svg.remove();plot.dispose();xFactor.dispose();},
   };
 }

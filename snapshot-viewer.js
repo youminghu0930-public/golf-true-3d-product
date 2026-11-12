@@ -1,3 +1,4 @@
+import {createSnapshotPipeline} from './snapshot-pipeline.js';
 import {mountPoseScene} from './snapshot-scene.js';
 import {createViewerInfo} from './viewer-info.js';
 import {createFrameSeeker} from './frame-seeker.js';
@@ -75,7 +76,8 @@ async function mountSnapshotCard(card,id,entry){
   const catalog=await json('materials/data/snapshot-videos.json'),clip=catalog.find(clip=>clip.id===id);
   if(!clip||clip.alignmentError)throw new Error(clip?.alignmentError||`Missing snapshot swing ${id}`);
   const sync=await json(clip.sync);
-  const videos={},seekers=[],times=[],requestedSteps=clip.views.map(()=>new Map());
+  const videos={},seekers=[],times=[],rawReady=new Set();
+  const streams=clip.views.map(view=>({name:view.name,ready:()=>false}));
   let disposed=false;
   for(const view of clip.views){
     const video=make('video');video.muted=video.defaultMuted=true;video.playsInline=true;video.preload='auto';video.setAttribute('muted','');video.setAttribute('playsinline','');video.setAttribute('aria-hidden','true');video.tabIndex=-1;
@@ -86,14 +88,17 @@ async function mountSnapshotCard(card,id,entry){
   clip.views.forEach((view,i)=>{
     const video=videos[view.name];
     json(`materials/data/2d_detections/${id}/${view.name}.json`).then(raw=>{
-      if(!disposed)controller.setRawDetections(view.name,{...raw,pred:sync.mapping[view.name].map(frame=>raw.pred[frame])});
+      if(!disposed){controller.setRawDetections(view.name,{...raw,pred:sync.mapping[view.name].map(frame=>raw.pred[frame])});rawReady.add(view.name);}
     }).catch(error=>console.warn('Snapshot 2D overlay unavailable',error));
     json(view.src+'.frames.json').then(timestamps=>{
       if(disposed)return;times[i]=timestamps;
-      seekers[i]=createFrameSeeker(video,{getTimes:()=>times[i],onRequest:()=>{},onSettled:rawFrame=>{
-        const step=requestedSteps[i].get(rawFrame);
-        if(!disposed&&step!==undefined)controller.commitVideoFrame(view.name,step);
-      }});
+      let settledRaw=null;
+      seekers[i]=createFrameSeeker(video,{getTimes:()=>times[i],onRequest:()=>{},onSettled:rawFrame=>{settledRaw=rawFrame;},requirePresentedFrame:true});
+      Object.assign(streams[i],{
+        ready:()=>video.readyState>=2&&!video.error&&rawReady.has(view.name),
+        decode:async raw=>{settledRaw=null;seekers[i].request(raw);await seekers[i].whenIdle();return settledRaw;},
+        reset:()=>seekers[i].reset(),
+      });
     }).catch(error=>console.warn('Snapshot video timing unavailable',error));
     // A slow or failed source never blocks animation or the other camera.
     video.addEventListener('error',()=>console.warn(`Snapshot video unavailable: ${view.name}`));
@@ -108,21 +113,18 @@ async function mountSnapshotCard(card,id,entry){
   status.remove();card.dataset.ready='true';
   const [start,end]=entry.range?.map((value,i)=>value===null?(i?clip.frames-1:0):value)??[0,clip.frames-1];
   let elapsed=0,previous,visible=false,lastFrame;
+  const pipeline=createSnapshotPipeline({streams,mapping:sync.mapping,present:(frame,matched)=>{
+    if(disposed)return;controller.presentFrame(frame,matched);card.dataset.frame=String(frame);
+  },onDrop:(name,error)=>console.warn(`Snapshot camera withdrawn until ready: ${name}`,error)});
   const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});observer.observe(card);
   function tick(now){
-    if(!card.isConnected){disposed=true;observer.disconnect();seekers.forEach(s=>s.reset());controller.dispose();Object.values(videos).forEach(v=>{v.removeAttribute('src');v.load();});return;}
+    if(!card.isConnected){disposed=true;observer.disconnect();pipeline.dispose();controller.dispose();Object.values(videos).forEach(v=>{v.removeAttribute('src');v.load();});return;}
     const playing=visible&&!card.inert&&!document.hidden;
     if(playing){
       if(previous!==undefined)elapsed+=(now-previous)*clip.fps/1000;
       const frame=start+Math.floor(elapsed)%(end-start+1);
-      if(frame!==lastFrame){
-      lastFrame=frame;controller.setFrame(frame);card.dataset.frame=String(frame);
-      seekers.forEach((seeker,i)=>{
-        const view=clip.views[i],video=videos[view.name];
-        if(video.readyState<2||video.error)return;
-        const rawFrame=sync.mapping[view.name][frame];requestedSteps[i].set(rawFrame,frame);
-        seeker.request(rawFrame);
-      });
+      if(frame!==lastFrame&&!pipeline.busy){
+        lastFrame=frame;void pipeline.advance(frame);
       }
     }
     previous=playing?now:undefined;

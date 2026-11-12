@@ -1,3 +1,4 @@
+import {createVector2DOverlay} from './vector-2d-overlay.js';
 import {createCommittedVideoTexture} from './snapshot-texture.js';
 import {interpolateSnapshotCamera} from './snapshot-transition.js';
 const rawNames = ['nose','atlas','top_head','left_ear','right_ear','left_shoulder','right_shoulder','left_elbow','right_elbow','left_wrist','right_wrist','left_hip','right_hip','left_knee','right_knee','left_ankle','right_ankle','golf_club_grip','golf_club_shaft','golf_club_heel','golf_club_head'];
@@ -41,6 +42,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const heading = document.createElement('h4'); heading.textContent = `Swing ${id}`; heading.className='media-item-title';
   const canvas = document.createElement('canvas'); canvas.setAttribute('aria-label', `3D pose for swing ${id}`); canvas.setAttribute('role','img');
   if(!snapshot)card.append(heading);card.append(canvas);
+  const vectorOverlay=createVector2DOverlay(canvas,{names:rawNames,edges:rawEdges});
   const displayedFrames = snapshot ? [frames[referenceFrame],frames[snapshot.frame]] : frames.slice(start,end+1);
   const points = displayedFrames.flat().filter(valid);
   if (!points.length) throw new Error('No valid 3D points');
@@ -98,7 +100,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const sphere = new THREE.SphereGeometry(jointRadius,24,16);
   const axis = new THREE.Vector3(0,1,0);
   const bones = edges.map(([a,b])=>{
-    const mesh = bannerMode?new THREE.Mesh(cylinder,boneMaterial):surface.bone(boneMaterial); mesh.castShadow=true;mesh.receiveShadow=false;if(bannerMode)mesh.renderOrder=2;scene.add(mesh);return {a,b,mesh};
+    const mesh = new THREE.Mesh(cylinder,boneMaterial); mesh.castShadow=true;mesh.receiveShadow=false;if(bannerMode)mesh.renderOrder=2;scene.add(mesh);return {a,b,mesh};
   });
   const dots = names.map((name,i)=>{
     const jointMaterial=jointMaterials[name.startsWith('left_')?'left':name.startsWith('right_')?'right':'center'];
@@ -175,7 +177,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   // One fixed scale across the full reconstruction, including frames outside
   // the displayed range, keeps red reserved for the sequence's peak speed.
   const speeds = new Map(); let peakSpeed=0;
-  for(const name of bannerMode?['golf_club_head']:joints){
+  for(const name of new Set([...joints,'golf_club_head'])){
     const index=names.indexOf(name),values=new Float64Array(frames.length);
     for(let f=1;f<frames.length;f++){
       const a=frames[f-1]?.[index],b=frames[f]?.[index];
@@ -230,7 +232,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const historyStride=Math.max(1,Math.round(fps*.1));
   const historyWindow=Math.max(1,(end-start+1)*.3);
   const clubSpeeds=speeds.get('golf_club_head') || speeds.get(joints[0]);
-  for(let f=start;bannerMode && f<=end;f+=historyStride){
+  for(let f=start;f<=end;f+=historyStride){
     const segments=[];
     for(const [a,b] of clubEdges){
       if(!valid(frames[f]?.[a])||!valid(frames[f]?.[b]))continue;
@@ -277,6 +279,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   let presetYaw=0,presetPitch=0;
   const cameraObjects = new THREE.Group(); scene.add(cameraObjects);
   const mediaCleanup=[];
+  mediaCleanup.push(()=>vectorOverlay.dispose());
   // Tripods live outside cameraObjects so their grounded feet do not feed back
   // into the lowest-object calculation and keep lowering the ground.
   const tripods=[];
@@ -364,24 +367,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     cameraPresets.set(view,{position:position.clone(),rotation:group.quaternion.clone(),K:cal.intrinsic,video:cameraVideos[view]});
     const raw=rawDetections[view]??{joints:rawNames,pred:[]};
     if(raw?.joints&&raw?.pred){
-      const mapping=rawNames.map(name=>raw.joints.indexOf(name));
-      const overlayColor='#ffce69';
-      const boneMeshes=[];const rawBoneGeometry=new THREE.CylinderGeometry(1,1,1,8);const rawBoneMaterial=new THREE.MeshBasicMaterial({color:overlayColor,toneMapped:false,transparent:true,depthWrite:false});
-      const pointGeometry=new THREE.BufferGeometry();pointGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(rawNames.length*3),3));
-      pointGeometry.setAttribute('jointColor',new THREE.BufferAttribute(new Float32Array(rawNames.length*3),3));
-      const dotMaterial=new THREE.ShaderMaterial({
-        uniforms:{ringColor:{value:new THREE.Color(overlayColor)},pointSize:{value:16*renderer.getPixelRatio()}},
-        vertexShader:'attribute vec3 jointColor; varying vec3 dotColor; uniform float pointSize; void main(){dotColor=jointColor;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);gl_PointSize=pointSize;}',
-        fragmentShader:'uniform vec3 ringColor;varying vec3 dotColor;void main(){float d=length(gl_PointCoord-vec2(.5));float aa=fwidth(d);float outer=1.0-smoothstep(.5-aa,.5,d);float ring=smoothstep(.35-aa,.35+aa,d)*outer;float dot=1.0-smoothstep(.29-aa,.29+aa,d);float alpha=max(ring,dot);if(alpha<.01)discard;gl_FragColor=vec4(mix(ringColor,dotColor,dot),alpha);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
-        transparent:true,depthWrite:false,toneMapped:false
-      });
-      for(const side of [1,-1]){
-        const overlay=new THREE.Group();overlay.position.z=-depth+side*.0005;
-        const bones=new THREE.InstancedMesh(rawBoneGeometry,rawBoneMaterial,rawEdges.length);bones.frustumCulled=false;bones.renderOrder=1;overlay.add(bones);boneMeshes.push(bones);
-        const joints=new THREE.Points(pointGeometry,dotMaterial);joints.renderOrder=2;overlay.add(joints);
-        group.add(overlay);
-      }
-      rawOverlays.push({view,raw,mapping,overlayColor,boneMeshes,dotMaterial,pointGeometry,K,depth,group});
+      rawOverlays.push({view,raw,mapping:rawNames.map(name=>raw.joints.indexOf(name)),overlayColor:'#ffce69',K,depth,group});
     }
     const video=cameraVideos[view];
     if(video){
@@ -592,8 +578,9 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
       mesh.visible=selectedPoseOpacity>.001&&valid(pose[a])&&valid(pose[b]);if(!mesh.visible)continue;
       const from=vector(pose[a]),to=vector(pose[b]),delta=to.clone().sub(from),length=delta.length();
       mesh.visible=length>1e-8;if(!mesh.visible)continue;
-      if(bannerMode){mesh.position.copy(from).add(to).multiplyScalar(.5);mesh.quaternion.setFromUnitVectors(axis,delta.normalize());mesh.scale.set(boneRadius,length,boneRadius);}
-      else surface.placeBone(mesh,from,to);
+      // Full-length bones meet the intact joint spheres without a visual seam.
+      mesh.position.copy(from).add(to).multiplyScalar(.5);
+      mesh.quaternion.setFromUnitVectors(axis,delta.normalize());mesh.scale.set(boneRadius,length,boneRadius);
     }
     dots.forEach((mesh,i)=>{if(!mesh)return;mesh.visible=selectedPoseOpacity>.001&&valid(pose[i]);if(mesh.visible){if(bannerMode)mesh.position.copy(vector(pose[i]));else surface.placeJoint(mesh,vector(pose[i]));}});
     for(const trail of trails){
@@ -609,59 +596,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
       if(past.mesh.visible)past.mesh.material.opacity=.75*(1-age/historyWindow);
     }
     camera.updateMatrixWorld();
-    for(const overlay of rawOverlays){
-      // Measure actual projected image scale, including distance, zoom, FOV,
-      // and orientation, instead of multiplying point size by zoom alone.
-      overlay.group.updateWorldMatrix(true,false);
-      const origin=overlay.group.localToWorld(new THREE.Vector3(0,0,-overlay.depth)).project(camera);
-      const pixel=overlay.group.localToWorld(new THREE.Vector3(overlay.depth/overlay.K[0][0],0,-overlay.depth)).project(camera);
-      const verticalPixel=overlay.group.localToWorld(new THREE.Vector3(0,overlay.depth/overlay.K[1][1],-overlay.depth)).project(camera);
-      const imageScale=Math.max(.0001,Math.hypot((pixel.x-origin.x)*w/2,(pixel.y-origin.y)*h/2),Math.hypot((verticalPixel.x-origin.x)*w/2,(verticalPixel.y-origin.y)*h/2));
-      const detailScale=Math.sqrt(imageScale);
-      const bonePixels=Math.max(1.4,Math.min(5.6,2.5*detailScale));
-      const jointPixels=Math.max(10,Math.min(36,16*detailScale));
-      const points=overlay.raw.pred[videoRecords.get(overlay.view)?.frame??frame];
-      const project=index=>{
-        const p=points?.[overlay.mapping[index]];
-        if(!p||!Number.isFinite(p[0])||!Number.isFinite(p[1])||(p.length>2&&p[2]<=0)||(p[0]===0&&p[1]===0))return null;
-        return [(p[0]-overlay.K[0][2])*overlay.depth/overlay.K[0][0],-(p[1]-overlay.K[1][2])*overlay.depth/overlay.K[1][1],0];
-      };
-      let n=0;
-      for(const [a,b] of rawEdges){
-        const from=project(a),to=project(b);if(!from||!to)continue;
-        const startPoint=new THREE.Vector3(...from),endPoint=new THREE.Vector3(...to),delta=endPoint.clone().sub(startPoint),length=delta.length();
-        if(length<1e-9)continue;
-        // Joint rings are screen-sized: trim in projected pixels so the gap
-        // stays clear even when the video plane is viewed at an angle.
-        const startCamera=overlay.group.localToWorld(startPoint.clone().setZ(-overlay.depth)).applyMatrix4(camera.matrixWorldInverse);
-        const endCamera=overlay.group.localToWorld(endPoint.clone().setZ(-overlay.depth)).applyMatrix4(camera.matrixWorldInverse);
-        const startScreen=startCamera.clone().applyMatrix4(camera.projectionMatrix);
-        const endScreen=endCamera.clone().applyMatrix4(camera.projectionMatrix);
-        const screenLength=Math.hypot((endScreen.x-startScreen.x)*w/2,(endScreen.y-startScreen.y)*h/2);
-        const inset=jointPixels/2+.5;
-        if(screenLength<=inset*2||startCamera.z>=0||endCamera.z>=0)continue;
-        const fraction=inset/screenLength;
-        const startTrim=fraction*endCamera.z/((1-fraction)*startCamera.z+fraction*endCamera.z);
-        const endTrim=fraction*startCamera.z/((1-fraction)*endCamera.z+fraction*startCamera.z);
-        startPoint.addScaledVector(delta,startTrim);endPoint.addScaledVector(delta,-endTrim);
-        transform.position.copy(startPoint).add(endPoint).multiplyScalar(.5);
-        transform.quaternion.setFromUnitVectors(axis,delta.normalize());
-        const thickness=Math.min(2.8,bonePixels/1.8/imageScale)*.9*overlay.depth/overlay.K[0][0];
-        transform.scale.set(thickness,length*(1-startTrim-endTrim),thickness);transform.updateMatrix();
-        overlay.boneMeshes.forEach(mesh=>mesh.setMatrixAt(n,transform.matrix));n++;
-      }
-      overlay.boneMeshes.forEach(mesh=>{mesh.count=n;mesh.instanceMatrix.needsUpdate=true;});
-      overlay.dotMaterial.uniforms.pointSize.value=jointPixels*renderer.getPixelRatio();
-      let count=0;const dots=overlay.pointGeometry.attributes.position,colors=overlay.pointGeometry.attributes.jointColor;
-      rawNames.forEach((name,i)=>{
-        const p=project(i);if(!p)return;
-        dots.setXYZ(count,...p);
-        const color=new THREE.Color(name.startsWith('left_')?'#3b82f6':name.startsWith('right_')?'#ef4444':overlay.overlayColor);
-        colors.setXYZ(count++,color.r,color.g,color.b);
-      });
-      colors.needsUpdate=true;
-      overlay.pointGeometry.setDrawRange(0,count);dots.needsUpdate=true;overlay.pointGeometry.computeBoundingSphere();
-    }
+    vectorOverlay.render({camera,scene,overlays:rawOverlays,frame,w,h});
     canvas.dataset.frame=String(frame);
     renderer.render(scene,camera);snapshotOverlayView?.(camera,w,h);
   }
@@ -758,10 +693,16 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
       const overlay=rawOverlays.find(overlay=>overlay.view===view);
       if(overlay){overlay.raw=raw;overlay.mapping=rawNames.map(name=>raw.joints.indexOf(name));draw();}
     },
-    commitVideoFrame(view,value){
-      const record=videoRecords.get(view);if(!record)return;
-      record.frame=Math.max(start,Math.min(end,Math.floor(value)));
-      record.texture.commit();record.screen.visible=true;draw();
+    presentFrame(value,matched=[]){
+      frame=Math.max(start,Math.min(end,Math.floor(value)));
+      const views=new Map(matched.map(item=>[item.name,item.raw]));
+      for(const [view,record] of videoRecords){
+        record.screen.visible=views.has(view);
+        record.frame=views.has(view)?frame:null;
+        if(record.screen.visible)record.texture.commit();
+      }
+      canvas.dataset.syncState=JSON.stringify({frame,views:Object.fromEntries(views)});
+      metricOverlays?.setFrame(frame);draw();
     },
     setPlaying(value){playbackEnabled=Boolean(value);},
     setFrame(value){frame=Math.max(start,Math.min(end,Math.floor(value)));metricOverlays?.setFrame(frame);draw();},

@@ -6,7 +6,7 @@ if (content.sections.map(section => section.id).join() !== 'abstract,introductio
 }
 await fs.rm(new URL('dist/', root), {recursive: true, force: true});
 await fs.mkdir(new URL('dist/materials/', root), {recursive: true});
-for (const file of ['index.html', 'styles.css', 'main.js', '.nojekyll', 'materials/content.json', 'snapshot-viewer.js', 'snapshot-scene.js', 'snapshot-transition.js', 'snapshot-texture.js', 'viewer-info.js', 'frame-seeker.js']) {
+for (const file of ['index.html', 'styles.css', 'main.js', '.nojekyll', 'materials/content.json', 'snapshot-viewer.js', 'snapshot-scene.js', 'snapshot-transition.js', 'snapshot-texture.js', 'snapshot-pipeline.js', 'vector-2d-overlay.js', 'viewer-info.js', 'frame-seeker.js']) {
   await fs.copyFile(new URL(file, root), new URL(`dist/${file}`, root));
 }
 await fs.cp(new URL('materials/projects/', root), new URL('dist/materials/projects/', root), {recursive:true});

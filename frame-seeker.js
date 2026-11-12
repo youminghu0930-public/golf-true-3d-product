@@ -1,7 +1,8 @@
 // Keep requested frame indices independent of asynchronous decoder events.
-export function createFrameSeeker(video, { getTimes, onRequest, onSettled }) {
+export function createFrameSeeker(video, { getTimes, onRequest, onSettled, requirePresentedFrame = false }) {
   let pending = null, inFlight = null, presented = false, seekFinished = false, callback, presentationFallback;
   const waiters = new Set();
+  let confirmedFrame = null;
   function idle() {
     if (pending !== null || inFlight !== null || video.seeking) return;
     for (const resolve of waiters) resolve();
@@ -16,7 +17,7 @@ export function createFrameSeeker(video, { getTimes, onRequest, onSettled }) {
     const completed = inFlight;
     inFlight = null;
     // Present completed intermediate frames during a held key or long scrub.
-    if (completed !== null) onSettled(completed);
+    if (completed !== null) { confirmedFrame = completed; onSettled(completed); }
     if (pending !== null) pump();
     else {
       idle();
@@ -33,7 +34,7 @@ export function createFrameSeeker(video, { getTimes, onRequest, onSettled }) {
     const start = times[target];
     const interval = (times[target + 1] ?? (start + 1 / 30)) - start;
     const time = start + Math.min(interval / 2, 0.01);
-    if (Math.abs(video.currentTime - time) < 0.000001) {
+    if (Math.abs(video.currentTime - time) < 0.000001 && (!requirePresentedFrame || confirmedFrame === target)) {
       presented = true; seekFinished = true; settle();
     } else {
       // Register before the seek so a fast decoder cannot publish the frame
@@ -57,7 +58,7 @@ export function createFrameSeeker(video, { getTimes, onRequest, onSettled }) {
     seekFinished = true;
     // Mobile compositors may withhold callbacks for a paused decoder surface.
     // Prefer the exact callback, but never leave the frame controls locked forever.
-    if (inFlight !== null && !presented) {
+    if (inFlight !== null && !presented && !requirePresentedFrame) {
       clearTimeout(presentationFallback);
       presentationFallback = setTimeout(() => { presented = true; settle(); }, 250);
     }

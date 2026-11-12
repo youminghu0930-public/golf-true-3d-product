@@ -1,11 +1,12 @@
 <!doctype html><meta charset="utf-8"><title>Transparency depth regression</title><pre id="result">Running GPU checks…</pre>
 <script type="module">
 import * as THREE from '/materials/projects/pose-information-extraction/vendor/three/three.module.js';
+import {createTranslationStrokeMaterial} from '/translation-overlay.js';
 import {createDepthCompositor} from '/depth-compositor.js';
-const renderer=new THREE.WebGLRenderer(),scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,10);
+const renderer=new THREE.WebGLRenderer({antialias:true}),scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,10);
 renderer.setSize(64,64);renderer.toneMapping=THREE.NoToneMapping;camera.position.z=5;scene.background=new THREE.Color('white');
 const plane=(color,z)=>{const mesh=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.5,depthWrite:false}));mesh.position.z=z;scene.add(mesh);return mesh;};
-const red=plane('red',1),blue=plane('blue',0),compositor=createDepthCompositor(renderer),target=new THREE.WebGLRenderTarget(64,64),pixel=new Uint8Array(4),results=[];
+const red=plane('red',1),blue=plane('blue',0),compositor=createDepthCompositor(renderer),target=new THREE.WebGLRenderTarget(64,64,{samples:4}),pixel=new Uint8Array(4),results=[];
 function check(name,expected){renderer.setRenderTarget(target);compositor.render(scene,camera);renderer.readRenderTargetPixels(target,32,32,1,1,pixel);const pass=expected.every((value,i)=>Math.abs(value-pixel[i])<=3);results.push({name,pass,pixel:[...pixel],expected});}
 check('front red over back blue',[191,64,128]);
 red.renderOrder=-100;blue.renderOrder=100;check('draw order cannot change the spatial blend',[191,64,128]);
@@ -19,5 +20,32 @@ red.position.z=blue.position.z=0;red.rotation.y=blue.rotation.y=.6;red.renderOrd
 renderer.setRenderTarget(target);compositor.render(scene,camera);
 const samples=[];for(let x=10;x<=54;x+=2){const sample=new Uint8Array(4);renderer.readRenderTargetPixels(target,x,32,1,1,sample);samples.push([...sample]);}
 results.push({name:'coplanar fills stay uniform across the tilted plane',pass:samples.every(sample=>sample.slice(0,3).every((value,i)=>Math.abs(value-[191,64,128][i])<=3)),samples});
+red.visible=blue.visible=false;
+const diagonal=new THREE.Mesh(new THREE.PlaneGeometry(.6,1.6),new THREE.MeshBasicMaterial({color:'black'}));diagonal.rotation.z=.37;scene.add(diagonal);
+renderer.setRenderTarget(target);compositor.render(scene,camera);
+const edgePixels=new Uint8Array(64*64*4);renderer.readRenderTargetPixels(target,0,0,64,64,edgePixels);
+let smoothPixels=0;for(let i=0;i<edgePixels.length;i+=4)if(edgePixels[i]>3&&edgePixels[i]<252)smoothPixels++;
+results.push({name:'diagonal silhouettes receive subpixel edge smoothing',pass:smoothPixels>20,smoothPixels});
+const nativePixels=new Uint8Array(64*64*4);renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,64,64,nativePixels);
+let nativeDifference=0;for(let i=0;i<nativePixels.length;i++)nativeDifference=Math.max(nativeDifference,Math.abs(nativePixels[i]-edgePixels[i]));
+results.push({name:'solid geometry matches the original direct renderer pixel for pixel',pass:nativeDifference===0,maxDifference:nativeDifference});
+scene.remove(diagonal);
+const thin=new THREE.Mesh(new THREE.PlaneGeometry(.025,1.5),new THREE.MeshBasicMaterial({color:'black',transparent:true,opacity:.5,depthWrite:false}));scene.add(thin);
+const coverage=[];
+for(const zoom of [.4,.6,1]){
+ camera.zoom=zoom;camera.updateProjectionMatrix();thin.rotation.z=.53;
+ renderer.setRenderTarget(target);compositor.render(scene,camera);
+ renderer.readRenderTargetPixels(target,0,0,64,64,edgePixels);
+ let measured=0;for(let i=0;i<edgePixels.length;i+=4)measured+=1-edgePixels[i]/255;
+ const expected=.025*1.5*(32*zoom)**2*.5;
+ coverage.push({zoom,measured,expected,pass:Math.abs(measured-expected)/expected<.25});
+}
+results.push({name:'thin transparent geometry retains area coverage at distant zoom levels',pass:coverage.every(c=>c.pass),coverage});
+scene.remove(thin);camera.zoom=1;camera.updateProjectionMatrix();
+const strokeMaterial=createTranslationStrokeMaterial('#7540c8');scene.add(new THREE.AmbientLight('white',2));
+const tube=new THREE.Mesh(new THREE.CapsuleGeometry(.02,1.5,4,16),strokeMaterial);tube.rotation.z=-1.45;scene.add(tube);
+renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,64,64,edgePixels);
+let blended=0;for(let i=0;i<edgePixels.length;i+=4)if(edgePixels[i]>3&&edgePixels[i]<252)blended++;
+results.push({name:'rounded translation tube renders native antialiased edges',pass:blended>20,blended});
 document.querySelector('#result').textContent=JSON.stringify({pass:results.every(r=>r.pass),results},null,2);document.body.append(renderer.domElement);
 </script>

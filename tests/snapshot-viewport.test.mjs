@@ -28,3 +28,19 @@ test('Camera POV default zoom fits the clear height only when a strip is present
  const halfHeight=10*Math.tan(Math.PI/8);
  for(const [worldY,pixelY] of [[halfHeight,0],[-halfHeight,clear]]){const point=new THREE.Vector3(0,worldY,0).project(camera);close((1-point.y)*h/2,pixelY);}
 });
+
+test('Close calibrated views place the fixed hip focus at the clear-area center and preserve pan',async()=>{
+ const THREE=await import('../materials/projects/pose-information-extraction/vendor/three/three.module.js');
+ const {focusedSnapshotOffset}=await import('../snapshot-viewport.js');
+ for(const position of [[3,2,6],[-6,2,1]])for(const zoom of [6,8.5,15]){
+  const w=800,h=460,focus=new THREE.Vector3(.2,-.3,.1),camera=new THREE.PerspectiveCamera(58,w/h,.01,100);
+  camera.position.set(...position);camera.lookAt(0,0,0);camera.zoom=zoom;
+  const viewport=snapshotViewCenter(h,374,17,-11),base=snapshotViewCenter(h,374);
+  camera.setViewOffset(w,h,base.offsetX,base.offsetY,w,h);camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
+  const offset=focusedSnapshotOffset(w,h,viewport,focus.clone().project(camera));
+  camera.setViewOffset(w,h,offset.offsetX,offset.offsetY,w,h);camera.updateProjectionMatrix();
+  const point=focus.clone().project(camera);
+  assert.ok(Math.abs((point.x+1)*w/2-(w/2+17))<1e-8);
+  assert.ok(Math.abs((1-point.y)*h/2-(374/2-11))<1e-8);
+ }
+});

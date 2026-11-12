@@ -98,7 +98,7 @@ async function mountSnapshotCard(card,id,entry,title,key){
   }
   // Build the 3D scene without waiting for either videos or 2D data.
   const measurementMetrics=measurementFeature?await json(`materials/data/metrics/${id}.json`):undefined;
-  const controller=await mountPoseScene(scene,id,{...entry,joints:entry.joints??['golf_club_head'],range:[0,clip.frames-1],fps:clip.fps},{showCameras:true,autoPlay:false,cameraVideos:videos,hoganPlanes,defaultZoomScale:measurementFeature==='hip-translation'?3.5:1.25,measurementMetrics,measurementFeature,showRawDetections});
+  const controller=await mountPoseScene(scene,id,{...entry,joints:entry.joints??['golf_club_head'],range:[0,clip.frames-1],fps:clip.fps},{showCameras:true,autoPlay:false,cameraVideos:videos,hoganPlanes,defaultZoomScale:measurementFeature==='hip-translation'?8.5:1.25,measurementMetrics,measurementFeature,showRawDetections});
   clip.views.forEach((view,i)=>{
     const video=videos[view.name];
     if(showRawDetections)json(`materials/data/2d_detections/${id}/${view.name}.json`).then(raw=>{

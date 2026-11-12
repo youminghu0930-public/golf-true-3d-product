@@ -31,3 +31,20 @@ test('Translation plot uses three distinct solid axis channels and exported posi
  assert.equal(channels.length,3);assert.equal(new Set(channels.map(c=>c.color)).size,3);
  for(const channel of channels){assert.equal(channel.dashed,false);assert.deepEqual(channel.values,metrics.metrics.position.hip_sway_thrust_lift[channel.group]);}
 });
+
+test('Loading translation overlays never exposes unpositioned unit-size tubes',async()=>{
+ const THREE=await import('../materials/projects/pose-information-extraction/vendor/three/three.module.js');
+ const {createTranslationOverlay}=await import('../translation-overlay.js');
+ const {measurementFeatures}=await import('../measurement-features.js');
+ const scene=new THREE.Scene(),groups=measurementFeatures['hip-translation'].groups;
+ const labels=new Map(groups.map(group=>[`${group.id}:${group.id}`,{}]));
+ const overlay=createTranslationOverlay({scene,toWorld:p=>new THREE.Vector3(...p),data,metrics},groups,labels);
+ const tubes=scene.children.filter(object=>object.isGroup),markers=scene.children.filter(object=>object.isMesh);
+ assert.equal(tubes.length,5);
+ for(const group of tubes){assert.equal(group.visible,false);assert.equal(group.children[0].scale.y,0);assert.ok(group.children[0].scale.x<.001);}
+ assert.ok(markers.every(marker=>!marker.visible));
+ overlay.setFrame(150);
+ assert.ok(markers.every(marker=>marker.visible));
+ for(const group of tubes)assert.ok(group.children[0].scale.x<.001);
+ overlay.dispose();assert.equal(scene.children.length,0);
+});

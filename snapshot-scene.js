@@ -1,5 +1,5 @@
 import {createDepthCompositor} from './depth-compositor.js';
-import {snapshotViewCenter} from './snapshot-viewport.js';
+import {snapshotViewCenter,focusedSnapshotOffset} from './snapshot-viewport.js';
 import {createMeasurementOverlays} from './rotation-overlays.js';
 import {createHoganPlanes,averageShaftLength} from './hogan-planes.js';
 import {createVector2DOverlay} from './vector-2d-overlay.js';
@@ -649,9 +649,11 @@ diffuseColor.a*=finished?1.0:0.5;`
     if(preset&&measurementFeature==='hip-translation'){
       // Measure baseline framing without user pan so dragging stays unrestricted.
       camera.setViewOffset(w,h,viewport.offsetX+viewPanX,viewport.offsetY+viewPanY,w,h);
+      constrainCameraAboveGround(camera,minimumCameraY);
       camera.updateProjectionMatrix();camera.updateMatrixWorld(true);
       const projected=cameraTarget.clone().project(camera);
-      camera.setViewOffset(w,h,viewport.offsetX+projected.x*w/2,viewport.offsetY,w,h);
+      const focusOffset=focusedSnapshotOffset(w,h,viewport,projected);
+      camera.setViewOffset(w,h,focusOffset.offsetX,focusOffset.offsetY,w,h);
     }
     const targetOffsetX=camera.view?.offsetX??viewport.offsetX,targetOffsetY=camera.view?.offsetY??viewport.offsetY;
     if(cameraFlight){
@@ -708,7 +710,7 @@ diffuseColor.a*=finished?1.0:0.5;`
     camera.updateMatrixWorld();
     vectorOverlay.render({camera,scene,overlays:rawOverlays,frame,w,h});
     canvas.dataset.frame=String(frame);
-    renderScene();snapshotOverlayView?.(camera,w,h);
+    snapshotOverlayView?.(camera,w,h);renderScene();
   }
   // Wheel and pinch share an uncapped zoom-in range across features and POVs.
   // Keep the existing overview zoom-out floor and reject numerical overflow.

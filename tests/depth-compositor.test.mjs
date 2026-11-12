@@ -11,11 +11,12 @@ test('Depth peeling isolates solids and resolves transparent layers without chan
  let target=null,color=new THREE.Color('#111111'),alpha=1;const passes=[];
  const renderer={autoClear:true,shadowMap:{autoUpdate:true},getDrawingBufferSize(v){return v.set(320,200);},getClearColor(v){return v.copy(color);},getClearAlpha(){return alpha;},getRenderTarget(){return target;},setRenderTarget(t){target=t;},setClearColor(c,a){color.set(c);alpha=a;},render(s){
   if(s!==scene){passes.push('composite');return;}
+  if(target){assert.equal(target.samples,0);assert.equal(target.width,640);assert.equal(target.height,400);}
   passes.push([solid.visible,glass.visible]);
   if(glass.visible){assert.equal(glass.material.depthWrite,true);assert.equal(glass.material.blending,THREE.NoBlending);}
  }};
  const compositor=createDepthCompositor(renderer,{layers:3});compositor.render(scene,new THREE.Camera());
- assert.deepEqual(passes,[[true,false],[false,true],[false,true],[false,true],'composite']);
+ assert.deepEqual(passes,[[true,false],[true,false],[false,true],[false,true],[false,true],'composite','composite']);
  assert.equal(solid.visible,true);assert.equal(glass.visible,true);assert.equal(hidden.visible,false);
  assert.equal(glass.material.depthWrite,false);assert.equal(glass.material.blending,THREE.NormalBlending);
  assert.equal(renderer.shadowMap.autoUpdate,true);assert.equal(target,null);assert.equal(alpha,1);

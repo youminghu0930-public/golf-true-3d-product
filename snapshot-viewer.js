@@ -50,11 +50,12 @@ export async function mountSnapshots(root) {
     button.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${step<0?'M15 5l-7 7 7 7':'M9 5l7 7-7 7'}"/></svg>`;
     button.onclick=()=>select(target+step);button.hidden=entries.length<2;if(entries.length>1)shell.append(button);
   }
-  root.append(shell);if(entries.length>1)root.append(dots);select(0);
+  root.replaceChildren(shell);if(entries.length>1)root.append(dots);select(0);
   await Promise.all(entries.map(async ([id,entry],i)=>{
     try { await mountSnapshotCard(cards[i],id,entry); }
-    catch(error){console.error(error);cards[i].textContent=`Swing ${id}: ${error.message}`;}
+    catch(error){console.error(error);const status=cards[i].querySelector('[role=status]');if(status)status.textContent=`Swing ${id}: ${error.message}`;}
   }));
+  root.setAttribute('aria-busy','false');
 
 }
 
@@ -68,11 +69,15 @@ async function mountSnapshotCard(card,id,entry){
     {gesture:'Scroll / pinch',action:'Zoom around the window center, including after panning.'},
     {gesture:'Select the current POV again',action:'Recenter its position and rotation while keeping zoom. Free view remembers its orientation when switching views.'},
   ],'section-info');
+  const buttons=[];
+  for(const [value,label] of [['face-on','Face-on view'],['down-the-line','Down-the-line view'],['free-view','Free-view']]){
+    const button=make('button',label);button.type='button';button.disabled=true;button.setAttribute('aria-pressed',String(value==='free-view'));options.append(button);buttons.push([button,value]);
+  }
   header.append(options,info);
   const scene=make('div',undefined,'snapshot-overview-scene');
   const status=make('p','Loading swing…','snapshot-overview-status');status.setAttribute('role','status');
   const decoders=make('div',undefined,'video-source-decoders');
-  card.append(header,scene,decoders,status);
+  scene.append(status);card.append(header,scene,decoders);
   const catalog=await json('materials/data/snapshot-videos.json'),clip=catalog.find(clip=>clip.id===id);
   if(!clip||clip.alignmentError)throw new Error(clip?.alignmentError||`Missing snapshot swing ${id}`);
   const sync=await json(clip.sync);
@@ -105,10 +110,9 @@ async function mountSnapshotCard(card,id,entry){
     video.src=view.src;video.load();
   });
   scene.querySelector('h4')?.remove();
-  const buttons=[];
-  for(const [value,label] of [['face-on','Face-on view'],['down-the-line','Down-the-line view'],['free-view','Free-view']]){
-    const button=make('button',label);button.type='button';button.setAttribute('aria-pressed',String(value==='free-view'));
-    button.onclick=()=>{controller.setView(value);buttons.forEach(([b,v])=>b.setAttribute('aria-pressed',String(value===v)));};options.append(button);buttons.push([button,value]);
+  for(const [button,value] of buttons){
+    button.disabled=false;
+    button.onclick=()=>{controller.setView(value);buttons.forEach(([b,v])=>b.setAttribute('aria-pressed',String(value===v)));};
   }
   status.remove();card.dataset.ready='true';
   const [start,end]=entry.range?.map((value,i)=>value===null?(i?clip.frames-1:0):value)??[0,clip.frames-1];

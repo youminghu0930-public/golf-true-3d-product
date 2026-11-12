@@ -141,7 +141,8 @@ async function renderPage() {
     section.append(heading, body);
     if(content.id==='abstract'){
       const snapshots=element('div',undefined,'pose-snapshots overview-snapshots');section.append(snapshots);
-      import('./snapshot-viewer.js').then(async module=>{await module.mountSnapshots(snapshots);document.dispatchEvent(new Event('snapshot-layout-ready'));}).catch(error=>{console.error(error);snapshots.textContent='Unable to load snapshot.';});
+      mountSnapshotPlaceholder(snapshots);
+      import('./snapshot-viewer.js').then(async module=>{await module.mountSnapshots(snapshots);document.dispatchEvent(new Event('snapshot-layout-ready'));}).catch(error=>{console.error(error);const status=snapshots.querySelector('[role=status]');if(status)status.textContent='Unable to load snapshot. Please reload.';});
     }
     main.append(section);
   }
@@ -168,6 +169,21 @@ async function renderPage() {
     requestAnimationFrame(() => requestAnimationFrame(restorePosition));
   }
 
+}
+
+
+// Reserve the final responsive header and scene before the heavy viewer imports.
+function mountSnapshotPlaceholder(root){
+  const shell=element('div',undefined,'snapshot-shell'),wheel=element('div',undefined,'snapshot-wheel');
+  const card=element('article',undefined,'pose-snapshot snapshot-card is-current is-placeholder');
+  const header=element('div',undefined,'snapshot-overview-header'),options=element('div',undefined,'camera-view-options');
+  options.append(element('span','Select POV:','camera-view-label'));
+  for(const [value,label] of [['face-on','Face-on view'],['down-the-line','Down-the-line view'],['free-view','Free-view']]){
+    const button=element('button',label);button.type='button';button.disabled=true;button.setAttribute('aria-pressed',String(value==='free-view'));options.append(button);
+  }
+  const info=element('div',undefined,'snapshot-info section-info'),infoButton=element('button','ⓘ','snapshot-info-button');infoButton.type='button';infoButton.disabled=true;infoButton.setAttribute('aria-label','Snapshot gestures');info.append(infoButton);header.append(options,info);
+  const scene=element('div',undefined,'snapshot-overview-scene'),status=element('p','Loading swing…','snapshot-overview-status');status.setAttribute('role','status');scene.append(status);
+  card.append(header,scene);wheel.append(card);shell.append(wheel);root.replaceChildren(shell);root.setAttribute('aria-busy','true');
 }
 
 function scanItem(text) {

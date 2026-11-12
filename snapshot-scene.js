@@ -592,7 +592,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     }
     for(const past of clubHistory){
       const age=frame-past.frame;
-      past.mesh.visible=false; // Club history is hidden without changing its bounds inputs.
+      past.mesh.visible=age>0&&age<historyWindow;
       if(past.mesh.visible)past.mesh.material.opacity=.75*(1-age/historyWindow);
     }
     camera.updateMatrixWorld();

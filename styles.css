@@ -852,3 +852,11 @@ a.project-card:hover .project-link-label, a.project-card:focus-visible .project-
  .snapshot-overview-header .camera-view-options button { padding:7px 9px; font-size:12px; }
  .overview-snapshots .snapshot-overview-scene canvas { height:350px; }
 }
+
+/* The loading placeholder and ready viewer share the same responsive geometry. */
+.overview-snapshots:has(.is-placeholder) .snapshot-wheel { height:auto; padding:12px 0; }
+.overview-snapshots .snapshot-card.is-placeholder { position:relative; top:auto; left:auto; margin:0 auto; transform:none; }
+.overview-snapshots .snapshot-overview-scene { height:460px; }
+.overview-snapshots .snapshot-overview-scene canvas { height:100%; }
+.snapshot-overview-status { position:absolute; inset:0; display:grid; place-items:center; margin:0; padding:20px; text-align:center; }
+@media(max-width:600px){.overview-snapshots .snapshot-overview-scene { height:350px; }}

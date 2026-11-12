@@ -1,10 +1,15 @@
 {
-  "00": {
-    "range": [
-      0,
-      null
-    ],
-    "fps": 24,
-    "joints": ["golf_club_head"]
-  }
+  "demo":{
+    "video": "00",
+    "range": [0, null],
+    "duration": 5
+  },
+  "features":[
+    "Club movement",
+    "Hogan's plane (pane of glass)",
+    "Absolute hip, shoulder rotations and x factor",
+    "Absolute spine bend and tilt",
+    "Relative hip and shoulder rotation",
+    "Absolute hip sway thrust and lift"
+  ]
 }

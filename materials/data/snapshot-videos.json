@@ -10,14 +10,14 @@
     "views": [
       {
         "name": "face-on",
-        "src": "materials/data/previews/00/face-on.mp4",
+        "src": "materials/data/previews/00/face-on-seek.mp4",
         "fps": 24,
         "frames": 693,
         "source": "materials/data/videos/00/face-on.mp4"
       },
       {
         "name": "down-the-line",
-        "src": "materials/data/previews/00/down-the-line.mp4",
+        "src": "materials/data/previews/00/down-the-line-seek.mp4",
         "fps": 24,
         "frames": 694,
         "source": "materials/data/videos/00/down-the-line.mp4"

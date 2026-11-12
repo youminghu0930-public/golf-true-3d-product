@@ -1,3 +1,5 @@
+import {createGeometricRotationOverlays} from './rotation-overlays.js';
+import {createHoganPlanes,averageShaftLength} from './hogan-planes.js';
 import {createVector2DOverlay} from './vector-2d-overlay.js';
 import {createCommittedVideoTexture} from './snapshot-texture.js';
 import {interpolateSnapshotCamera} from './snapshot-transition.js';
@@ -20,7 +22,7 @@ import * as THREE from './materials/projects/pose-information-extraction/vendor/
 import {interpolateRotation,constrainCameraAboveGround,constrainOrbitAboveGround} from './materials/projects/pose-information-extraction/camera-flight.js';
 const valid = p => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
 async function json(url) { const response = await fetch(url); if (!response.ok) throw new Error(`${url}: ${response.status}`); return response.json(); }
-export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, bannerMetrics, snapshotMetrics, videoMetrics, calibratedViews = false } = {}) {
+export async function mountPoseScene(card, id, entry, { showCameras = false, autoPlay = true, cameraVideos = {}, rawDetections = {}, bannerMode = false, bannerMetrics, snapshotMetrics, videoMetrics, calibratedViews = false, hoganPlanes = false, defaultZoomScale = 1, geometricRotationMetrics, showRawDetections = true } = {}) {
   const poseData = await json(`materials/data/3d_results/${encodeURIComponent(id)}.json`);
   const {reconstruction: frames, calibration, joints: jointNames} = poseData;
   const {names,edges,indexes,clubEdges} = poseStructure(jointNames);
@@ -35,7 +37,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     : configuredRange;
   if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isInteger) || range[0] < 0 || range[1] < range[0] || range[1] >= frames.length) throw new Error('Invalid snapshot frame range');
   const [start,end] = range;
-  const joints = (entry.joints || []).map(name => name === 'golf_club_haed' ? 'golf_club_head' : name);
+  const joints = (hoganPlanes ? ['golf_club_head'] : geometricRotationMetrics ? [] : entry.joints || []).map(name => name === 'golf_club_haed' ? 'golf_club_head' : name);
   if (joints.some(name => !names.includes(name))) throw new Error('Unknown trail joint');
   let frame = Math.min(end, Math.max(start, snapshot?.frame ?? entry.highlight_index ?? start));
   let yaw = 0, pitch = 0, zoom = 2, distanceScale = 1;
@@ -66,6 +68,14 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   // source +X is right, source -Y is up, and source +Z points into the screen.
   const unit = height > 0 ? height : radius;
   const vector = p => new THREE.Vector3((p[0]-center[0])/unit, -(p[1]-center[1])/unit, -(p[2]-center[2])/unit);
+  const hoganReference=hoganPlanes?(()=>{
+    const pose=frames[start];
+    const point=name=>{const p=pose[indexes[name]];if(!valid(p))throw new Error(`Missing Hogan reference joint: ${name}`);return vector(p).toArray();};
+    const midpoint=(a,b)=>point(a).map((v,i)=>(v+point(b)[i])/2);
+    const trajectory=selectedFrames.map(p=>p[indexes.golf_club_head]).filter(valid).map(p=>vector(p).toArray());
+    return createHoganPlanes({head:point('golf_club_head'),leftAnkle:point('left_ankle'),rightAnkle:point('right_ankle'),shoulder:midpoint('left_shoulder','right_shoulder'),hip:midpoint('left_hip','right_hip'),trajectory});
+  })():null;
+  const hoganTolerance=hoganPlanes?averageShaftLength(selectedFrames,indexes.golf_club_grip,indexes.golf_club_heel)/unit/10:0;
   let snapshotOverlayView;
   let snapshotCamera,snapshotPairFocus,snapshotRotationPivot;
   const snapshotFocus=new THREE.Vector3();let snapshotFocusZoom=1;
@@ -200,10 +210,32 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     const trailMaterial=material('#ffffff');
     trailMaterial.transparent=true;trailMaterial.depthWrite=false;
     trailMaterial.onBeforeCompile=shader=>{
+      if(hoganPlanes){
+        shader.vertexShader='attribute vec3 trailFrom; attribute vec3 trailTo; varying vec3 trailPoint;\n'+shader.vertexShader;
+        shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\ntrailPoint=mix(trailFrom,trailTo,position.y+0.5);');
+        shader.fragmentShader='varying vec3 trailPoint; uniform vec3 paneAnchor; uniform vec3 paneAlong; uniform vec3 paneRise0; uniform vec3 paneRise1; uniform float paneSide; uniform float offPlaneTolerance; uniform vec3 toleranceColor; uniform vec3 insideColor; uniform vec3 outsideColor; uniform vec3 futureColor;\n'+shader.fragmentShader;
+        Object.assign(shader.uniforms,{paneAnchor:{value:new THREE.Vector3(...hoganReference[0].corners[0])},paneAlong:{value:new THREE.Vector3(...hoganReference[0].along)},paneRise0:{value:new THREE.Vector3(...hoganReference[0].rise)},paneRise1:{value:new THREE.Vector3(...hoganReference[1].rise)},paneSide:{value:hoganReference[0].side},offPlaneTolerance:{value:hoganTolerance},toleranceColor:{value:new THREE.Color('#4e9b70')},insideColor:{value:new THREE.Color('#477db8')},outsideColor:{value:new THREE.Color('#c45b62')},futureColor:{value:new THREE.Color('#92999f')}});
+      }
       shader.vertexShader='attribute float historyFrame;\nvarying float trailAge;\n'+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntrailAge = historyFrame;');
       shader.fragmentShader='uniform float playbackFrame;\nuniform float historyFrames;\nvarying float trailAge;\n'+shader.fragmentShader;
-      shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\nfloat age = playbackFrame - trailAge;\nif (age < 0.0 || age >= historyFrames) discard;\ndiffuseColor.a *= 1.0 - age / historyFrames;');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>', hoganPlanes
+        ? `#include <color_fragment>
+vec3 offset=trailPoint-paneAnchor;
+float cosine=dot(paneRise0,paneRise1),denominator=max(1e-10,1.0-cosine*cosine);
+float u=(dot(offset,paneRise0)-cosine*dot(offset,paneRise1))/denominator;
+float v=(dot(offset,paneRise1)-cosine*dot(offset,paneRise0))/denominator;
+float x=dot(offset,paneAlong);
+bool inside=x>=-1e-6&&x<=paneSide+1e-6&&u>=-1e-6&&v>=-1e-6&&u+v<=paneSide+1e-6;
+// Distance to the nearest finite pane, measured perpendicular to its surface
+// when the projection lies inside it; edges use the true Euclidean distance.
+vec3 nearest0=paneAlong*clamp(x,0.0,paneSide)+paneRise0*clamp(dot(offset,paneRise0),0.0,paneSide);
+vec3 nearest1=paneAlong*clamp(x,0.0,paneSide)+paneRise1*clamp(dot(offset,paneRise1),0.0,paneSide);
+bool nearPlane=min(length(offset-nearest0),length(offset-nearest1))<offPlaneTolerance;
+bool finished=trailAge<=playbackFrame;
+diffuseColor.rgb=finished?(inside?insideColor:(nearPlane?toleranceColor:outsideColor)):futureColor;
+diffuseColor.a*=finished?1.0:0.5;`
+        : '#include <color_fragment>\nfloat age = playbackFrame - trailAge;\nif (age < 0.0 || age >= historyFrames) discard;\ndiffuseColor.a *= 1.0 - age / historyFrames;');
       shader.uniforms.playbackFrame={value:frame};
       shader.uniforms.historyFrames={value:Math.max(1,(end-start+1)*.3)};
       trailMaterial.userData.shader=shader;
@@ -212,6 +244,10 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
       if(!items.length)continue;
       const instanceGeometry=geometry.clone();
       instanceGeometry.setAttribute('historyFrame',new THREE.InstancedBufferAttribute(new Float32Array(items.map(item=>item.frame)),1));
+      if(hoganPlanes){
+        instanceGeometry.setAttribute('trailFrom',new THREE.InstancedBufferAttribute(new Float32Array(items.flatMap(item=>(isSegment?item.from:item.point).toArray())),3));
+        instanceGeometry.setAttribute('trailTo',new THREE.InstancedBufferAttribute(new Float32Array(items.flatMap(item=>(isSegment?item.to:item.point).toArray())),3));
+      }
       const mesh=new THREE.InstancedMesh(instanceGeometry,trailMaterial,items.length);
       items.forEach((item,i)=>{
         transform.position.copy(isSegment?item.from.clone().add(item.to).multiplyScalar(.5):item.point);
@@ -222,7 +258,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
         mesh.setColorAt(i,new THREE.Color().setHSL((1-relativeSpeed)*2/3,1,.5));
       });
       mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;mesh.computeBoundingSphere();
-      mesh.receiveShadow=true;mesh.visible=true;scene.add(mesh);
+      mesh.receiveShadow=!hoganPlanes;mesh.visible=true;scene.add(mesh);
       trails.push({mesh,frames:items.map(item=>item.frame)});
     }
   });
@@ -232,7 +268,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const historyStride=Math.max(1,Math.round(fps*.1));
   const historyWindow=Math.max(1,(end-start+1)*.3);
   const clubSpeeds=speeds.get('golf_club_head') || speeds.get(joints[0]);
-  for(let f=start;f<=end;f+=historyStride){
+  for(let f=start;!hoganPlanes&&!geometricRotationMetrics&&f<=end;f+=historyStride){
     const segments=[];
     for(const [a,b] of clubEdges){
       if(!valid(frames[f]?.[a])||!valid(frames[f]?.[b]))continue;
@@ -366,7 +402,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     }
     cameraPresets.set(view,{position:position.clone(),rotation:group.quaternion.clone(),K:cal.intrinsic,video:cameraVideos[view]});
     const raw=rawDetections[view]??{joints:rawNames,pred:[]};
-    if(raw?.joints&&raw?.pred){
+    if(showRawDetections&&!hoganPlanes&&raw?.joints&&raw?.pred){
       rawOverlays.push({view,raw,mapping:rawNames.map(name=>raw.joints.indexOf(name)),overlayColor:'#ffce69',K,depth,group});
     }
     const video=cameraVideos[view];
@@ -416,6 +452,54 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     updateTripods(surfaceY);
   }
   updateGround();
+  if(hoganPlanes){
+    const panes=hoganReference;
+    const group=new THREE.Group();group.name='hogan-planes';
+    // Tiny static studio/sky environment: generated once, never captures a frame.
+    const environmentCanvas=document.createElement('canvas');environmentCanvas.width=256;environmentCanvas.height=128;
+    const context=environmentCanvas.getContext('2d');
+    const sky=context.createLinearGradient(0,0,0,128);
+    sky.addColorStop(0,'#b5cfdf');sky.addColorStop(.46,'#e8f1ee');sky.addColorStop(.52,'#a6b6a1');sky.addColorStop(1,'#55644f');
+    context.fillStyle=sky;context.fillRect(0,0,256,128);
+    for(const [x,width,alpha] of [[42,28,.9],[171,45,.65]]){
+      const glow=context.createLinearGradient(x-width,0,x+width,0);
+      glow.addColorStop(0,'rgba(255,255,255,0)');glow.addColorStop(.5,`rgba(255,255,255,${alpha})`);glow.addColorStop(1,'rgba(255,255,255,0)');
+      context.fillStyle=glow;context.fillRect(x-width,12,width*2,70);
+    }
+    const environment=new THREE.CanvasTexture(environmentCanvas);environment.mapping=THREE.EquirectangularReflectionMapping;environment.colorSpace=THREE.SRGBColorSpace;
+    mediaCleanup.push(()=>environment.dispose());
+    panes.forEach((pane,i)=>{
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(pane.corners.flat(),3));
+      geometry.setIndex([0,1,2,0,2,3]);geometry.computeVertexNormals();
+      geometry.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1,0,1],2));
+      // Transparent panes do not write depth or cast solid shadows over the pose.
+      const color=i?'#e6ad53':'#68adc6';
+      const glassMaterial=new THREE.MeshPhysicalMaterial({color:'#edf6f4',transparent:true,opacity:.23,roughness:.07,metalness:0,ior:1.45,reflectivity:1,clearcoat:1,clearcoatRoughness:.06,envMap:environment,envMapIntensity:.8,side:THREE.DoubleSide,depthWrite:false});
+      // Stronger rim reflection at grazing angles, without opaque pane interiors.
+      glassMaterial.onBeforeCompile=shader=>{
+        shader.vertexShader='varying vec2 glassUV;\n'+shader.vertexShader;
+        shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nglassUV=uv;');
+        shader.fragmentShader='varying vec2 glassUV;\n'+shader.fragmentShader;
+        shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\nfloat paneFresnel=pow(1.0-abs(dot(normalize(vNormal),normalize(vViewPosition))),3.0);\nfloat paneSheen=exp(-pow((glassUV.x+glassUV.y*0.45-0.72)/0.085,2.0));\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(1.0),0.55*paneSheen);\ndiffuseColor.a += 0.23*paneFresnel+0.09*paneSheen;');
+      };
+      const glass=new THREE.Mesh(geometry,glassMaterial);
+      glass.name=pane.name;glass.receiveShadow=false;group.add(glass);
+      // Leave the front edge out of each outline; draw their common edge once.
+      const outline=new THREE.Line(new THREE.BufferGeometry().setFromPoints([1,2,3,0].map(j=>new THREE.Vector3(...pane.corners[j]))),new THREE.LineBasicMaterial({color,transparent:true,opacity:.65,depthWrite:false}));
+      group.add(outline);
+      // Thin polished rims give each otherwise clear pane a readable thickness.
+      const rimMaterial=new THREE.MeshPhysicalMaterial({color:i?'#c3c7b6':'#a8cfce',transparent:true,opacity:.48,roughness:.08,metalness:.1,envMap:environment,envMapIntensity:1.2,depthWrite:false});
+      for(const [a,b] of [[0,1],[1,2],[2,3],[3,0]]){
+        if(i&&a===0&&b===1)continue;
+        const path=new THREE.LineCurve3(new THREE.Vector3(...pane.corners[a]),new THREE.Vector3(...pane.corners[b]));
+        group.add(new THREE.Mesh(new THREE.TubeGeometry(path,1,.003,6,false),rimMaterial));
+      }
+    });
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(panes[0].corners.slice(0,2).map(p=>new THREE.Vector3(...p))),new THREE.LineBasicMaterial({color:'#739c9b',transparent:true,opacity:.8,depthWrite:false})));
+    scene.add(group);
+    canvas.dataset.hoganPlanes=JSON.stringify(panes);
+  }
   floor.visible=grid.visible=!bannerMode;
   // Planar distance guides: horizontal XZ distance, not camera slant distance.
   const distanceGuides=new THREE.Group();distanceGuides.visible=showCameras&&!bannerMode;scene.add(distanceGuides);
@@ -456,9 +540,9 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
       guide.material.polygonOffset=true;guide.material.polygonOffsetFactor=-2;guide.material.polygonOffsetUnits=-2;
     }
   });
-  // Viewing-camera guides take precedence where ground guides overlap.
+  // Snapshots omit the bright green virtual-camera and center ground guides.
   for(const guide of [viewerRing,viewerMarker,viewerConnection,viewerCross,centerRing,centerCross]){
-    guide.renderOrder=11;guide.material.depthWrite=true;guide.material.polygonOffsetFactor=-4;guide.material.polygonOffsetUnits=-4;
+    guide.visible=false;
   }
   function updateDistanceGuides(){
     if(!distanceGuides.visible)return;
@@ -546,6 +630,8 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
       camera.quaternion.copy(orbit).multiply(preset.rotation);
       camera.fov=THREE.MathUtils.radToDeg(2*Math.atan((bannerMode?width/(2*preset.K[0][0]*camera.aspect):Math.max(height/(2*preset.K[1][1]),width/(2*preset.K[0][0]*camera.aspect)))));
     }
+    // Apply the same default framing scale before interpolating either POV.
+    camera.zoom*=defaultZoomScale;
     if(cameraFlight){
       const t=cameraFlight.progress;
       camera.near=THREE.MathUtils.lerp(cameraFlight.near,camera.near,t);
@@ -586,7 +672,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     for(const trail of trails){
       let low=0,high=trail.frames.length;
       while(low<high){const middle=(low+high)>>>1;if(trail.frames[middle]<=frame)low=middle+1;else high=middle;}
-      trail.mesh.count=low;
+      trail.mesh.count=hoganPlanes?trail.frames.length:low;
       const shader=trail.mesh.material.userData.shader;
       if(shader)shader.uniforms.playbackFrame.value=frame;
     }
@@ -600,11 +686,12 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
     canvas.dataset.frame=String(frame);
     renderer.render(scene,camera);snapshotOverlayView?.(camera,w,h);
   }
-  // Match snapshot navigation: metric-video wheel and pinch zoom have no
-  // artificial 4× ceiling or zoom-out floor, accepting finite positive values.
-  const clampZoom=value=>videoMetrics
-    ? (Number.isFinite(value)&&value>0?value:zoom)
-    : Math.max(.4,Math.min(4,value));
+  // Wheel and pinch share an uncapped zoom-in range across features and POVs.
+  // Keep the existing overview zoom-out floor and reject numerical overflow.
+  const clampZoom=value=>{
+    if(!Number.isFinite(value)||value<=0)return zoom;
+    return videoMetrics?value:Math.max(.4,value);
+  };
   const zoomAroundWindow=ratio=>{
     const next=clampZoom(zoom*ratio),applied=next/zoom;
     // Scale the projection offset with zoom so its fixed point is the
@@ -716,6 +803,10 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   }
   if(videoMetrics){
     metricOverlays=createVideoMetricOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:videoMetrics,requestRender:draw,setPoses:setSnapshotPoseOpacity});
+    snapshotOverlayView=metricOverlays.updateView;mediaCleanup.push(()=>metricOverlays.dispose());
+  }
+  if(geometricRotationMetrics){
+    metricOverlays=createGeometricRotationOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:geometricRotationMetrics,requestRender:draw});
     snapshotOverlayView=metricOverlays.updateView;mediaCleanup.push(()=>metricOverlays.dispose());
   }
   if(snapshot){

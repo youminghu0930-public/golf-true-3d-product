@@ -181,7 +181,7 @@ function mountSnapshotPlaceholder(root){
   for(const [value,label] of [['face-on','Face-on view'],['down-the-line','Down-the-line view'],['free-view','Free-view']]){
     const button=element('button',label);button.type='button';button.disabled=true;button.setAttribute('aria-pressed',String(value==='free-view'));options.append(button);
   }
-  const info=element('div',undefined,'snapshot-info section-info'),infoButton=element('button','ⓘ','snapshot-info-button');infoButton.type='button';infoButton.disabled=true;infoButton.setAttribute('aria-label','Snapshot gestures');info.append(infoButton);header.append(options,info);
+  const info=element('div',undefined,'snapshot-info section-info'),infoButton=element('button','ⓘ','snapshot-info-button');infoButton.type='button';infoButton.disabled=true;infoButton.setAttribute('aria-label','Snapshot gestures');info.append(infoButton);header.append(element('h3','club movement','snapshot-feature-title'),options,info);
   const scene=element('div',undefined,'snapshot-overview-scene'),status=element('p','Loading swing…','snapshot-overview-status');status.setAttribute('role','status');scene.append(status);
   card.append(header,scene);wheel.append(card);shell.append(wheel);root.replaceChildren(shell);root.setAttribute('aria-busy','true');
 }

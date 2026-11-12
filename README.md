@@ -72,3 +72,12 @@ When `requestVideoFrameCallback` is supported, strict seeking requires its times
 Regression checks cover delayed loading, barriers, late joining, repeated/skipped raw indices, loop wrap, wrong decoder results, timeouts and stale frame callbacks. Input audit for swing 00 compared five joints over steps 100–449 against lags −4…+4; median reprojection error was lowest at zero offset in both views (2.24px face-on, 2.48px down-the-line). This supports the saved temporal correspondence; it does not remove geometric reconstruction error.
 
 The parent Abstract viewer now also projects its 2D overlays as SVG. Connections follow the golf PoC SVG rule: clip at the ring centerline, use rounded caps, and match the bone and ring stroke widths. The cap overlaps the ring stroke without entering the hollow interior or touching the solid dot. Its 3D bones meet the intact joint spheres, while the frame-presentation barrier remains in use.
+
+
+### Seek-friendly snapshot previews
+
+Snapshot playback uses `materials/data/previews/00/*-seek.mp4`: H.264 previews with every frame independently decodable and no B-frames. The original previews and source videos remain unchanged. This avoids repeatedly decoding a long GOP for each synchronized frame seek. The faster previews total approximately 38 MB, trading download size for more regular playback.
+
+To regenerate them after replacing the original preview videos, run `node scripts/prepare-snapshot-previews.mjs` (requires ffmpeg/ffprobe). The script verifies every output frame timestamp against the original `.frames.json` before updating the catalog. Ordinary serving and Pages builds do not require ffmpeg.
+
+Append `?snapshotPerf=1` to the local page URL to expose rolling presentation-gap and render-time measurements in each card's `data-playback-stats` attribute. Timing collection is disabled for normal visits. `sync.json` mapping and the exact decoded-frame presentation barrier remain unchanged.

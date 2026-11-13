@@ -1,3 +1,4 @@
+import {browserSnapshotResources,createExclusiveSnapshotMount} from './snapshot-resources.js';
 import {measurementFeatureForTitle} from './measurement-features.js';
 import {createSnapshotPipeline} from './snapshot-pipeline.js';
 import {mountPoseScene} from './snapshot-scene.js';
@@ -5,6 +6,8 @@ import {createViewerInfo} from './viewer-info.js';
 import {createFrameSeeker} from './frame-seeker.js';
 async function json(url){const r=await fetch(url,{cache:'no-cache'});if(!r.ok)throw new Error(`${url}: ${r.status}`);return r.json();}
 export async function mountSnapshots(root) {
+  const resources=browserSnapshotResources();
+  let onSelection=()=>{};
   const config = await json('materials/data/snapshot.json');
   const entries=config.features.map((title,i)=>({title,id:String(config.demo.video),entry:config.demo,key:`feature-${i}`}));
   if(!entries.length)return;
@@ -31,6 +34,7 @@ export async function mountSnapshots(root) {
   }
   function select(next) {
     target=next;index=((target%cards.length)+cards.length)%cards.length;
+    onSelection(index);
     cards.forEach((card,i)=>{card.classList.toggle('is-current',i===index);card.inert=i!==index;card.setAttribute('aria-hidden',String(i!==index));buttons[i].setAttribute('aria-current',String(i===index));});
     cancelAnimationFrame(animation);
     const from=position,started=performance.now(),duration=Math.min(900,300+Math.max(0,Math.abs(target-from)-1)*70);
@@ -52,10 +56,27 @@ export async function mountSnapshots(root) {
     button.onclick=()=>select(target+step);button.hidden=entries.length<2;if(entries.length>1)shell.append(button);
   }
   root.replaceChildren(shell);if(entries.length>1)root.append(dots);select(0);
-  await Promise.all(entries.map(async ({id,entry,title,key},i)=>{
-    try { await mountSnapshotCard(cards[i],id,entry,title,key); }
-    catch(error){console.error(error);const status=cards[i].querySelector('[role=status]');if(status)status.textContent=`${title}: ${error.message}`;}
-  }));
+  const report=(card,title,error)=>{console.error(error);const status=card.querySelector('[role=status]');if(status)status.textContent=`${title}: ${error.message}`;};
+  if(resources.singleScene){
+    const placeholder=i=>{
+      const header=make('div',undefined,'snapshot-overview-header');header.append(make('h3',entries[i].title,'snapshot-feature-title'));
+      cards[i].replaceChildren(header,make('div',undefined,'snapshot-overview-scene'));
+      cards[i].dataset.ready='false';
+    };
+    cards.forEach((_,i)=>placeholder(i));let previous;
+    const loader=createExclusiveSnapshotMount(async i=>{
+      if(previous!==undefined)placeholder(previous);
+      const {id,entry,title,key}=entries[i];cards[i].replaceChildren();previous=i;
+      try{return await mountSnapshotCard(cards[i],id,entry,title,key);}
+      catch(error){report(cards[i],title,error);}
+    });
+    onSelection=i=>{void loader.select(i);};await loader.select(index);
+  }else{
+    await Promise.all(entries.map(async ({id,entry,title,key},i)=>{
+      try {await mountSnapshotCard(cards[i],id,entry,title,key);}
+      catch(error){report(cards[i],title,error);}
+    }));
+  }
   root.setAttribute('aria-busy','false');
 
 }
@@ -142,8 +163,13 @@ async function mountSnapshotCard(card,id,entry,title,key){
     }
   },onDrop:(name,error)=>console.warn(`Snapshot camera withdrawn until ready: ${name}`,error)});
   const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});observer.observe(card);
+  const cleanup=()=>{
+    if(disposed)return;disposed=true;observer.disconnect();pipeline.dispose();controller.dispose();
+    Object.values(videos).forEach(v=>{v.pause();v.removeAttribute('src');v.load();v.remove();});
+  };
   function tick(now){
-    if(!card.isConnected){disposed=true;observer.disconnect();pipeline.dispose();controller.dispose();Object.values(videos).forEach(v=>{v.removeAttribute('src');v.load();});return;}
+    if(disposed)return;
+    if(!card.isConnected){cleanup();return;}
     const playing=visible&&!card.inert&&!document.hidden;
     if(playing){
       if(previous!==undefined)elapsed+=(now-previous)*clip.fps/1000;
@@ -157,4 +183,5 @@ async function mountSnapshotCard(card,id,entry,title,key){
     if(!disposed)requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+  return cleanup;
 }

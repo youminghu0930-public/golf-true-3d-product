@@ -1,7 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>Transparency depth regression</title><pre id="result">Running GPU checks…</pre>
 <script type="module">
 import * as THREE from '/materials/projects/pose-information-extraction/vendor/three/three.module.js';
-import {createTranslationStrokeMaterial} from '/translation-overlay.js';
 import {createDepthCompositor} from '/depth-compositor.js';
 const renderer=new THREE.WebGLRenderer({antialias:true}),scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,10);
 renderer.setSize(64,64);renderer.toneMapping=THREE.NoToneMapping;camera.position.z=5;scene.background=new THREE.Color('white');
@@ -42,10 +41,5 @@ for(const zoom of [.4,.6,1]){
 }
 results.push({name:'thin transparent geometry retains area coverage at distant zoom levels',pass:coverage.every(c=>c.pass),coverage});
 scene.remove(thin);camera.zoom=1;camera.updateProjectionMatrix();
-const strokeMaterial=createTranslationStrokeMaterial('#7540c8');scene.add(new THREE.AmbientLight('white',2));
-const tube=new THREE.Mesh(new THREE.CapsuleGeometry(.02,1.5,4,16),strokeMaterial);tube.rotation.z=-1.45;scene.add(tube);
-renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,64,64,edgePixels);
-let blended=0;for(let i=0;i<edgePixels.length;i+=4)if(edgePixels[i]>3&&edgePixels[i]<252)blended++;
-results.push({name:'rounded translation tube renders native antialiased edges',pass:blended>20,blended});
 document.querySelector('#result').textContent=JSON.stringify({pass:results.every(r=>r.pass),results},null,2);document.body.append(renderer.domElement);
 </script>

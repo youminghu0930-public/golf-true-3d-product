@@ -32,19 +32,21 @@ test('Translation plot uses three distinct solid axis channels and exported posi
  for(const channel of channels){assert.equal(channel.dashed,false);assert.deepEqual(channel.values,metrics.metrics.position.hip_sway_thrust_lift[channel.group]);}
 });
 
-test('Loading translation overlays never exposes unpositioned unit-size tubes',async()=>{
+test('Flat translation strokes stay hidden until positioned and retain scene depth',async()=>{
  const THREE=await import('../materials/projects/pose-information-extraction/vendor/three/three.module.js');
  const {createTranslationOverlay}=await import('../translation-overlay.js');
  const {measurementFeatures}=await import('../measurement-features.js');
  const scene=new THREE.Scene(),groups=measurementFeatures['hip-translation'].groups;
  const labels=new Map(groups.map(group=>[`${group.id}:${group.id}`,{}]));
  const overlay=createTranslationOverlay({scene,toWorld:p=>new THREE.Vector3(...p),data,metrics},groups,labels);
- const tubes=scene.children.filter(object=>object.isGroup),markers=scene.children.filter(object=>object.isMesh);
- assert.equal(tubes.length,5);
- for(const group of tubes){assert.equal(group.visible,false);assert.equal(group.children[0].scale.y,0);assert.ok(group.children[0].scale.x<.001);}
- assert.ok(markers.every(marker=>!marker.visible));
- overlay.setFrame(150);
- assert.ok(markers.every(marker=>marker.visible));
- for(const group of tubes)assert.ok(group.children[0].scale.x<.001);
+ const strokes=scene.children.filter(object=>object.material?.isShaderMaterial);
+ assert.equal(strokes.length,5);
+ assert.ok(scene.children.every(object=>!object.visible));
+ overlay.setFrame(150);overlay.updateView(null,800,600);
+ for(const stroke of strokes){
+  assert.equal(stroke.material.depthTest,true);assert.equal(stroke.material.depthWrite,true);
+  assert.deepEqual(stroke.material.uniforms.resolution.value.toArray(),[800,600]);
+  assert.equal(stroke.material.uniforms.width.value,2);
+ }
  overlay.dispose();assert.equal(scene.children.length,0);
 });

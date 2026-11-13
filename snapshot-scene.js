@@ -1,3 +1,4 @@
+import {browserSnapshotResources} from './snapshot-resources.js';
 import {createDepthCompositor} from './depth-compositor.js';
 import {snapshotViewCenter,focusedSnapshotOffset} from './snapshot-viewport.js';
 import {createMeasurementOverlays} from './rotation-overlays.js';
@@ -84,10 +85,12 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#f4f7f0');
   const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-  const depthCompositor=showCameras&&!bannerMode?createDepthCompositor(renderer):null;
+  const resources=browserSnapshotResources({floatColor:!!renderer.extensions.get('EXT_color_buffer_float'),maxTextures:renderer.capabilities.maxTextures});
+  const depthCompositor=showCameras&&!bannerMode&&resources.depthCompositing?createDepthCompositor(renderer):null;
+  canvas.dataset.renderMode=depthCompositor?'depth-composited':'native';
   const renderScene=()=>depthCompositor?depthCompositor.render(scene,camera):renderer.render(scene,camera);
   registerViewerCapture(canvas,renderScene);
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(resources.pixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -97,7 +100,7 @@ export async function mountPoseScene(card, id, entry, { showCameras = false, aut
   scene.add(new THREE.HemisphereLight('#ffffff','#7d8974',2));
   const light = new THREE.DirectionalLight('#fff6df',3);
   light.position.set(-2,4,3); light.castShadow = true;
-  light.shadow.mapSize.set(2048,2048);
+  light.shadow.mapSize.set(resources.shadowSize,resources.shadowSize);
   const shadowExtent = Math.max(3,bound*1.8);
   Object.assign(light.shadow.camera,{left:-shadowExtent,right:shadowExtent,top:shadowExtent,bottom:-shadowExtent,near:.1,far:20});
   light.shadow.normalBias = .005; light.shadow.bias = -.00015;
@@ -821,7 +824,7 @@ diffuseColor.a*=finished?1.0:0.5;`
     setFrame(value){frame=Math.max(start,Math.min(end,Math.floor(value)));metricOverlays?.setFrame(frame);draw();},
     setMetricSelection(metric,keys=[]){metricOverlays?.setMetric(metric,keys);draw();},
     setMeasurementSelection(keys){metricOverlays?.setSelection(keys);draw();},
-    dispose(){cancelAnimationFrame(flightHandle);mediaCleanup.forEach(cleanup=>cleanup());disposed=true;cancelAnimationFrame(animationHandle);resizeObserver.disconnect();depthCompositor?.dispose();renderer.dispose();const geometries=new Set(),materials=new Set();scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});geometries.forEach(g=>g.dispose());materials.forEach(m=>{m.map?.dispose();m.dispose();});},
+    dispose(){cancelAnimationFrame(flightHandle);mediaCleanup.forEach(cleanup=>cleanup());disposed=true;cancelAnimationFrame(animationHandle);resizeObserver.disconnect();depthCompositor?.dispose();renderer.dispose();if(resources.singleScene)renderer.forceContextLoss();const geometries=new Set(),materials=new Set();scene.traverse(object=>{if(object.geometry)geometries.add(object.geometry);if(object.material)materials.add(object.material);});geometries.forEach(g=>g.dispose());materials.forEach(m=>{m.map?.dispose();m.dispose();});},
   };
   if(bannerMode&&bannerMetrics){
     metricOverlays=createBannerOverlays({scene,toWorld:vector,canvas,data:poseData,metrics:bannerMetrics,requestRender:draw});
